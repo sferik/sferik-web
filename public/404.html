@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Not found</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="stylesheet" href="/site.css" />
+    <script type="module" src="/site.js"></script>
+  </head>
+  <body>
+    <div class="scroller" data-scroller tabindex="-1">
+      <main class="screen" id="main">
+        <h1 class="sr-only">Not found</h1>
+        <p class="ps1">
+          <span class="prompt" aria-hidden="true"><span class="ps-user">sferik</span>@mbp <span class="ps-cwd">~</span>&gt; </span>cd
+          <span class="arg" data-path>this-page</span>
+        </p>
+        <p>cd: The directory '<span data-path>this-page</span>' does not exist</p>
+        <p data-suggest hidden>Did you mean <a href="/"></a>?</p>
+        <p class="ps1 after">
+          <span class="prompt" aria-hidden="true"><span class="ps-user">sferik</span>@mbp <span class="ps-cwd">~</span>&gt; </span>echo
+          <span class="arg">$status</span>
+        </p>
+        <p>404</p>
+
+        <p class="ps1 after-2">
+          <span class="prompt" aria-hidden="true"><span class="ps-user">sferik</span>@mbp <span class="ps-cwd">~</span>&gt; </span>ls <span class="arg">~</span>
+        </p>
+        <p><a href="/">index.html</a> <a href="/talks">talks.html</a> <a href="/resume">resume.html</a></p>
+
+        <section class="repl" data-repl aria-label="Interactive shell">
+          <div class="repl-log" aria-live="polite">
+            <div>Type <span class="hl-cmd">help</span> for a list of commands</div>
+          </div>
+          <label class="repl-line">
+            <span class="ps1-static"
+              ><span class="prompt"><span class="ps-user">sferik</span>@mbp <span class="ps-cwd">~</span>&gt; </span></span
+            >
+            <span class="repl-field">
+              <span class="echo"></span>
+              <input type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Type a command. Try help." autofocus />
+            </span>
+          </label>
+          <div class="repl-completions faint" aria-live="polite"></div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

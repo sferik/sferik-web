@@ -1,0 +1,6 @@
+# `bun test` runs the server tests (tests/server) with Bun's test runner,
+# which can't run the Playwright browser tests. The whole suite, with its
+# coverage thresholds, is `bun run test`.
+[test]
+root = "tests/server"
+preload = ["./tests/support/cloudflare.ts"]

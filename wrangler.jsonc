@@ -1,0 +1,49 @@
+// Cloudflare Workers configuration. See src/worker.ts, and the README's
+// "Deploying" section for the one-time setup.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "sferik",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-09-30",
+  "compatibility_flags": ["nodejs_compat"],
+  // Serve the site at sferik.<subdomain>.workers.dev too, which is handy for checking a deploy. Each page's
+  // canonical link points at sferik.net, so search engines don't treat it as a second site. Preview URLs (a
+  // URL per uploaded version) aren't used: deploys go straight to production with `bun run deploy`.
+  "workers_dev": true,
+  "preview_urls": false,
+  // public/, including the compiled browser code (bun run build). The Worker
+  // runs first for every request, since even "/" depends on the Accept header;
+  // it reads these through the ASSETS binding.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "html_handling": "none",
+    "not_found_handling": "none",
+  },
+  // Live downloads, stars, contributions, and the latest push, refreshed by the
+  // cron below. Wrangler created the namespace on the first deploy and recorded its id here.
+  "kv_namespaces": [
+    {
+      "binding": "LIVE",
+      "id": "3f8336b98a174bb2be8e1f3428ff13c3",
+    },
+  ],
+  // Who's logged in (the shell's who and w) and the ration of write's mail: one Durable Object, mbp, the computer
+  // everyone's logged in to. It keeps its state in SQLite storage, which the Workers free plan includes.
+  "durable_objects": {
+    "bindings": [{ "name": "MBP", "class_name": "Mbp" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Mbp"] }],
+  // write's messages, emailed through Email Routing, and only ever to the one address it has verified.
+  "send_email": [{ "name": "MAIL", "destination_address": "sferik@gmail.com", "allowed_sender_addresses": ["write@sferik.net"] }],
+  "triggers": {
+    "crons": ["*/15 * * * *"],
+  },
+  "observability": {
+    "enabled": true,
+  },
+  // sferik.net is the site's one domain; Wrangler creates its DNS record and certificate. sferik.com, sferik.org,
+  // and sferik.me redirect to it with Cloudflare redirect rules, which run before the Worker, so they're not here.
+  "routes": [{ "pattern": "sferik.net", "custom_domain": true }],
+}

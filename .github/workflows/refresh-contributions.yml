@@ -1,0 +1,37 @@
+# Refreshes the fallback copy of the GitHub contribution graph.
+# The page fetches live data on every load; this snapshot is only shown
+# if that request fails, so it just needs to be reasonably recent.
+name: Refresh contributions snapshot
+
+on:
+  schedule:
+    - cron: "17 9 * * *" # daily, 09:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download contributions
+        run: |
+          curl -fsSL --retry 3 "https://github-contributions-api.jogruber.de/v4/sferik?y=last" -o /tmp/contributions.json
+          # Only accept a well-formed response with a full year of days.
+          jq -e '(.contributions | length) >= 365 and (.total | type == "object")' /tmp/contributions.json > /dev/null
+          mv /tmp/contributions.json data/contributions.json
+
+      - name: Commit if changed
+        run: |
+          if git diff --quiet -- data/contributions.json; then
+            echo "No changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/contributions.json
+          git commit -m "Refresh contributions snapshot"
+          git push

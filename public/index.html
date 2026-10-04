@@ -1,0 +1,163 @@
+<!doctype html>
+<!--
+         __           _ _
+   ___  / _| ___ _ __(_) | __
+  / __|| |_ / _ \ '__| | |/ /
+  \__ \|  _|  __/ |  | |   <
+  |___/|_|  \___|_|  |_|_|\_\
+
+  This page builds itself from its own API. Every URL also answers
+  with JSON or plain text:  curl -H 'Accept: application/json' sferik.net/resume
+  Press ? on any page for keyboard shortcuts.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Erik Berlin</title>
+    <meta
+      name="description"
+      content="Erik Berlin (@sferik) is a software engineer in San Francisco. His open source packages have been downloaded more than 5 billion times."
+    />
+    <meta name="author" content="Erik Berlin" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+    <meta property="og:title" content="Erik Berlin" />
+    <meta property="og:description" content="Software engineer. Open source packages with more than 5 billion downloads. 2014 Ruby Hero." />
+    <meta property="og:url" content="https://sferik.net/" />
+    <meta property="og:type" content="profile" />
+    <meta property="og:image" content="https://sferik.net/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="A terminal: finger sferik, then Erik Berlin, I build libraries and tools software engineers depend on, and a year of GitHub contributions."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@sferik" />
+    <link rel="canonical" href="https://sferik.net/" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="webmention" href="https://webmention.io/sferik.net/webmention" />
+    <link rel="pingback" href="https://webmention.io/sferik.net/xmlrpc" />
+    <link rel="alternate" type="application/atom+xml" title="Talks, Erik Berlin" href="/talks.atom" />
+    <link rel="me" href="https://mastodon.social/@sferik" />
+    <link rel="me" href="https://github.com/sferik" />
+    <link rel="author" href="/humans.txt" />
+    <link rel="service-desc" href="/openapi.json" type="application/openapi+json" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="stylesheet" href="/site.css" />
+    <script type="module" src="/site.js"></script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Person",
+        "name": "Erik Berlin",
+        "alternateName": ["Erik Michaels-Ober", "sferik"],
+        "url": "https://sferik.net/",
+        "jobTitle": "Software Engineer",
+        "address": { "@type": "PostalAddress", "addressLocality": "San Francisco", "addressRegion": "CA" },
+        "award": "Ruby Hero Award (2014)",
+        "alumniOf": "Carnegie Mellon University",
+        "sameAs": [
+          "https://github.com/sferik",
+          "https://gitlab.com/sferik",
+          "https://rubygems.org/profiles/sferik",
+          "https://speakerdeck.com/sferik",
+          "https://www.linkedin.com/in/sferik",
+          "https://x.com/sferik",
+          "https://bsky.app/profile/sferik.net",
+          "https://mastodon.social/@sferik",
+          "https://www.threads.com/@sferik",
+          "https://www.facebook.com/sferik",
+          "https://www.instagram.com/sferik/",
+          "https://www.snapchat.com/@sferik",
+          "https://www.tiktok.com/@sf.erik",
+          "https://www.clubhouse.com/@sferik",
+          "https://www.reddit.com/user/sferik",
+          "https://medium.com/@sferik",
+          "https://www.tumblr.com/sferik",
+          "https://www.flickr.com/people/25243524@N02",
+          "https://www.pinterest.com/sferik/",
+          "https://dribbble.com/sferik",
+          "https://www.youtube.com/ekmichae",
+          "https://vimeo.com/sferik",
+          "https://www.twitch.tv/sferik",
+          "https://kick.com/sferik",
+          "https://open.spotify.com/user/sferik",
+          "https://soundcloud.com/erik",
+          "https://www.strava.com/athletes/sferik",
+          "https://www.kickstarter.com/profile/sferik",
+          "https://www.paypal.com/paypalme/sferik",
+          "https://account.venmo.com/u/sferik",
+          "https://cash.app/$pend",
+          "https://ko-fi.com/sferik",
+          "https://buymeacoffee.com/sferik",
+          "https://gravatar.com/sferik",
+          "https://linktr.ee/sferik"
+        ]
+      }
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <div class="scroller" data-scroller tabindex="-1">
+      <main class="screen" id="main" data-page="home" aria-busy="true">
+        <noscript
+          ><p>
+            This page builds itself from its own API, which needs JavaScript. Without it, try <code>curl sferik.net</code>, or read
+            <a href="/resume.txt">the resume as text</a>.
+          </p></noscript
+        >
+
+        <header class="banner" data-profile></header>
+
+        <div data-modules></div>
+
+        <section class="repl" data-repl aria-label="Interactive shell">
+          <div class="repl-log" aria-live="polite">
+            <div>Type <span class="hl-cmd">help</span> for a list of commands</div>
+          </div>
+          <label class="repl-line">
+            <span class="ps1-static"
+              ><span class="prompt"><span class="ps-user">sferik</span>@mbp <span class="ps-cwd">~</span>&gt; </span></span
+            >
+            <span class="repl-field">
+              <span class="echo"></span>
+              <input type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Type a command. Try help." />
+            </span>
+          </label>
+          <div class="repl-completions faint" aria-live="polite"></div>
+        </section>
+      </main>
+    </div>
+
+    <nav class="tmux" aria-label="Site">
+      <span class="left"
+        ><span class="session">[sferik]</span><a href="/" aria-current="page">0:home</a><a href="/talks">1:talks</a><a href="/resume">2:resume</a></span
+      >
+      <span class="right"><span class="host">"sferik.net" </span><span data-clock></span></span>
+    </nav>
+
+    <aside class="help" data-help hidden aria-label="Keyboard shortcuts">
+      <dl>
+        <dt><kbd>g h</kbd></dt>
+        <dd>home</dd>
+        <dt><kbd>g t</kbd></dt>
+        <dd>talks</dd>
+        <dt><kbd>g r</kbd></dt>
+        <dd>resume</dd>
+        <dt><kbd>j k</kbd></dt>
+        <dd>scroll</dd>
+        <dt><kbd>g g G</kbd></dt>
+        <dd>top, bottom</dd>
+        <dt><kbd>/</kbd></dt>
+        <dd>shell</dd>
+        <dt><kbd>d</kbd></dt>
+        <dd>dark or light</dd>
+        <dt><kbd>?</kbd></dt>
+        <dd>this help</dd>
+      </dl>
+    </aside>
+  </body>
+</html>

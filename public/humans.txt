@@ -1,0 +1,12 @@
+/* TEAM */
+  Author: Erik Berlin (formerly Erik Michaels-Ober)
+  Handle: @sferik
+  Location: San Francisco, California
+
+/* SITE */
+  Last update: 2026-10-01
+  Standards: HTML, CSS, a little JavaScript
+  Fonts: whatever monospace your computer already has
+  Frameworks: none
+  Build step: none
+  Trackers: none

@@ -1,0 +1,9 @@
+node_modules/
+test-results/
+playwright-report/
+coverage/
+# Built from src/client by `bun run build`
+public/*.js
+public/*.js.map
+.wrangler/
+.dev.vars
