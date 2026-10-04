@@ -1,0 +1,19 @@
+{
+  // The browser code: compiled to public/*.js as native ES modules, no bundler.
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "es2022",
+    "moduleResolution": "bundler",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": [],
+    "strict": true,
+    "outDir": "public",
+    "rootDir": "src/client",
+    "sourceMap": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src/client/**/*.ts", "src/types.d.ts"]
+}

@@ -1,0 +1,763 @@
+/*
+ * sferik.com
+ * One stylesheet. No web fonts, no frameworks, no build step.
+ * The page is an 80-column terminal; everything else follows from that.
+ */
+
+:root {
+  --paper: #ffffff;
+  --ink: #1d1d1f;
+  --dim: #6e6e73;
+  --faint: #aeaeb2;
+  --rule: #d2d2d7;
+  --link: #0040dd;
+  --ok: #1a7f37;
+  --warn: #9a6700;
+  --err: #c9372c;
+  --select: #b4d5fe;
+  --bar-bg: #1d1d1f;
+  --bar-ink: #f5f5f7;
+
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, "Cascadia Mono", Consolas, "Liberation Mono", "DejaVu Sans Mono", monospace;
+  --cols: 80ch;
+  --lh: 1.5;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --paper: #000000;
+    --ink: #f2f2f2;
+    --dim: #98989d;
+    --faint: #545458;
+    --rule: #2c2c2e;
+    --link: #64a8ff;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --err: #ff6a5f;
+    --select: #264f78;
+    --bar-bg: #f2f2f2;
+    --bar-ink: #000000;
+  }
+  :root:not([data-theme]) .graph {
+    --g0: #161b22;
+    --g1: #0e4429;
+    --g2: #006d32;
+    --g3: #26a641;
+    --g4: #39d353;
+  }
+}
+
+/* Pressing d overrides the system setting until the page reloads. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #000000;
+  --ink: #f2f2f2;
+  --dim: #98989d;
+  --faint: #545458;
+  --rule: #2c2c2e;
+  --link: #64a8ff;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --err: #ff6a5f;
+  --select: #264f78;
+  --bar-bg: #f2f2f2;
+  --bar-ink: #000000;
+}
+:root[data-theme="dark"] .graph {
+  --g0: #161b22;
+  --g1: #0e4429;
+  --g2: #006d32;
+  --g3: #26a641;
+  --g4: #39d353;
+}
+
+:root[data-theme="phosphor"] .graph {
+  --g0: #3d2a00;
+  --g1: #6b4a00;
+  --g2: #996a00;
+  --g3: #cc8d00;
+  --g4: #ffb000;
+}
+
+/* Easter egg: ↑↑↓↓←→←→BA. P3 phosphor on a CRT that never existed. */
+:root[data-theme="phosphor"] {
+  --paper: #120c02;
+  --ink: #ffb000;
+  --dim: #b37b00;
+  --faint: #6b4a00;
+  --rule: #3d2a00;
+  --link: #ffd36b;
+  --ok: #ffb000;
+  --warn: #ffb000;
+  --err: #ffb000;
+  --select: #5c3f00;
+  --bar-bg: #ffb000;
+  --bar-ink: #120c02;
+}
+:root[data-theme="phosphor"] body {
+  text-shadow:
+    0 0 2px rgba(255, 176, 0, 0.55),
+    0 0 9px rgba(255, 176, 0, 0.18);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 15px;
+  line-height: var(--lh);
+  font-variant-ligatures: none;
+  font-feature-settings: "calt" 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--select);
+}
+
+a {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+a:hover {
+  background: var(--link);
+  color: var(--paper);
+  text-decoration: none;
+}
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+h1,
+h2,
+h3,
+p,
+ul,
+ol,
+dl,
+dd,
+pre,
+figure {
+  margin: 0;
+}
+h1,
+h2,
+h3 {
+  font-size: 1em;
+  font-weight: 700;
+}
+p,
+dd,
+figcaption {
+  text-wrap: pretty; /* no one-word last lines */
+}
+ul,
+ol {
+  padding: 0;
+  list-style: none;
+}
+pre {
+  font: inherit;
+}
+b,
+strong {
+  font-weight: 700;
+}
+
+.dim {
+  color: var(--dim);
+}
+.faint {
+  color: var(--faint);
+}
+.ok {
+  color: var(--ok);
+}
+.warn {
+  color: var(--warn);
+}
+.err {
+  color: var(--err);
+}
+.nowrap {
+  white-space: nowrap;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ */
+/* Screen                                                             */
+/* ------------------------------------------------------------------ */
+
+/* The scroller spans the full window so its scrollbar sits at the edge;
+   the text column inside it stays 80 characters wide and centered. */
+.scroller {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.scroller:focus {
+  outline: none;
+}
+
+.screen {
+  max-width: calc(var(--cols) + 4ch);
+  margin: 0 auto;
+  padding: 3lh 2ch 3lh;
+}
+
+.skip {
+  position: absolute;
+  left: -999px;
+}
+.skip:focus {
+  left: 1ch;
+  top: 1ch;
+  z-index: 10;
+}
+
+/* The welcome banner: the only box on the page. */
+.banner {
+  border: 1px solid var(--ink);
+  border-radius: 7px;
+  padding: 1lh 2ch;
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A command and its output. */
+.cmd {
+  margin-top: 2.5lh;
+}
+.cmd > .ps1 {
+  display: block;
+  margin-bottom: 0.5lh;
+  overflow-wrap: anywhere;
+}
+/* fish's default prompt: user@host cwd> */
+.prompt {
+  color: var(--dim);
+  font-weight: 400;
+}
+.p-user,
+.p-cwd {
+  color: var(--ok);
+}
+/* fish's syntax highlighting: known commands in blue, unknown in red */
+.hl-cmd {
+  color: var(--link);
+}
+.hl-err {
+  color: var(--err);
+}
+.ls-dir {
+  color: var(--link);
+  font-weight: 700;
+}
+.repl-completions {
+  white-space: pre-wrap;
+}
+.hl-quote {
+  color: var(--warn);
+}
+.hl-op {
+  color: var(--ok);
+}
+.grep-match {
+  color: var(--err);
+  font-weight: 700;
+}
+.cal-today {
+  background: var(--ink);
+  color: var(--paper);
+}
+pre.sl {
+  overflow: hidden;
+  line-height: 1.2;
+}
+/* While a command runs there's no prompt, just whatever you type for it. */
+.repl.running .ps1-static {
+  display: none;
+}
+/* After exit: "[Process completed]", and any key starts a new session. */
+.repl.ended .repl-line {
+  opacity: 0;
+}
+.hl-suggest {
+  color: var(--faint);
+}
+.ps1 {
+  font-weight: 700;
+}
+.ps1 .arg {
+  font-weight: 400;
+}
+.out p + p {
+  margin-top: 1lh;
+}
+.out {
+  max-width: 72ch;
+}
+
+.out .xkcd {
+  margin: 1lh 0;
+}
+.xkcd img {
+  display: block;
+  width: 100%;
+  max-width: 385px;
+  height: auto;
+}
+.xkcd > a:hover {
+  background: none; /* the comic itself; caption links keep the normal hover */
+}
+.xkcd figcaption {
+  margin-top: 0.5lh;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .xkcd img {
+    filter: invert(1);
+  }
+}
+:root[data-theme="dark"] .xkcd img {
+  filter: invert(1);
+}
+:root[data-theme="phosphor"] .xkcd img {
+  filter: invert(1) sepia(1) saturate(4) hue-rotate(-12deg);
+}
+
+/* ls -l style table. */
+.ls {
+  border-collapse: collapse;
+  width: 100%;
+}
+.ls td {
+  padding: 0 2ch 0 0;
+  vertical-align: top;
+}
+.ls td:last-child {
+  padding-right: 0;
+}
+.ls .n {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+}
+.ls .name {
+  white-space: nowrap;
+}
+/* wc-style total row: the label in the name column, sums under each number */
+.ls tfoot td {
+  font-weight: 700;
+}
+.ls tfoot .n,
+.ls tfoot .n a {
+  color: var(--ink);
+}
+@media (max-width: 720px) {
+  .ls .hide-sm {
+    display: none;
+  }
+}
+
+/* Contribution graph: a grid of ■ characters. Labels stay at the page's
+   type size; the squares scale with the column so the year fills 80ch. */
+.out.graph {
+  max-width: none; /* the graph spans the full 80 columns, like the banner */
+}
+.cal {
+  --label: 4ch;
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: var(--label) repeat(var(--weeks), minmax(0, 1fr));
+  align-items: center;
+  line-height: 1.2;
+}
+.cal-month,
+.cal-day {
+  white-space: nowrap;
+  min-width: 0; /* month names overflow into the next columns instead of widening them */
+}
+.cal-cell {
+  /* One ■ per week column. The glyph fills about 0.6em, so dividing the
+     column by 0.8 leaves a small gap between squares, like GitHub's grid. */
+  font-size: calc((100cqw - var(--label)) / var(--weeks) / 0.8);
+  line-height: 1.25;
+  text-align: center;
+}
+.graph {
+  --g0: #ebedf0;
+  --g1: #9be9a8;
+  --g2: #40c463;
+  --g3: #30a14e;
+  --g4: #216e39;
+}
+.graph .c0 {
+  color: var(--g0);
+}
+.graph .c1 {
+  color: var(--g1);
+}
+.graph .c2 {
+  color: var(--g2);
+}
+.graph .c3 {
+  color: var(--g3);
+}
+.graph .c4 {
+  color: var(--g4);
+}
+.graph-meta {
+  margin-top: 0.5lh;
+}
+
+/* Languages. */
+.langs {
+  display: grid;
+  grid-template-columns: 13ch minmax(0, 1fr);
+  column-gap: 2ch;
+}
+.langs dt {
+  white-space: nowrap;
+}
+.langs dd {
+  color: var(--dim);
+}
+.langs dd a {
+  color: var(--link);
+}
+@media (max-width: 560px) {
+  .langs {
+    grid-template-columns: 1fr;
+  }
+  .langs dd {
+    margin-bottom: 0.5lh;
+  }
+}
+
+/* finger(1) */
+.finger {
+  display: grid;
+  grid-template-columns: 11ch minmax(0, 1fr);
+  column-gap: 1ch;
+}
+.finger dt {
+  color: var(--dim);
+}
+.icon {
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.13em;
+  fill: currentColor;
+  margin-right: 1ch;
+}
+.socials {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5lh 1.5ch;
+}
+.socials a {
+  color: var(--ink);
+  display: inline-block;
+  padding: 0.25em;
+  margin: -0.25em;
+  border-radius: 4px;
+}
+.socials .icon {
+  width: 1.4em;
+  height: 1.4em;
+  margin: 0;
+  vertical-align: middle;
+}
+.socials a:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* git log */
+.gitlog .sha {
+  color: var(--warn);
+  user-select: text; /* buttons aren't selectable by default; hashes should be copyable */
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.gitlog .sha:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+/* Talks list. */
+.talks li {
+  display: grid;
+  grid-template-columns: 8ch minmax(0, 1fr);
+  column-gap: 2ch;
+  padding: 0.25lh 0;
+}
+.talks-by-year li {
+  grid-template-columns: 4ch minmax(0, 1fr);
+}
+.talks .when {
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.talks .where {
+  color: var(--dim);
+}
+.talks .media a + a {
+  margin-left: 1ch;
+}
+.talks h3 {
+  font-weight: 400;
+}
+.year-head {
+  margin-top: 1.5lh;
+  color: var(--dim);
+}
+
+/* The prompt you can type into. */
+.repl {
+  margin-top: 2.5lh;
+}
+.repl-log > div {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.repl-log > .repl-rich {
+  white-space: normal;
+  max-width: 72ch;
+  margin-bottom: 0.5lh;
+}
+.repl-rich p + p {
+  margin-top: 1lh;
+}
+.repl-line {
+  display: flex;
+  align-items: baseline;
+}
+.repl-line .ps1-static {
+  white-space: pre;
+}
+.repl-field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.repl-field input {
+  font: inherit;
+  color: transparent;
+  caret-color: transparent;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  outline: none;
+  position: absolute;
+  inset: 0;
+}
+.repl-field .echo {
+  white-space: pre;
+  pointer-events: none;
+}
+.cursor {
+  display: inline-block;
+  width: 1ch;
+  background: var(--ink);
+  color: var(--paper);
+  animation: blink 1.06s steps(1) infinite;
+}
+.cursor:empty::before {
+  content: "\00a0";
+}
+.repl:not(.focused) .cursor {
+  background: transparent;
+  outline: 1px solid var(--ink);
+  outline-offset: -1px;
+  animation: none;
+}
+/* The home page plays like a session (see session() in site.ts): sections
+   wait, transparent, until they scroll into view, then type and print. */
+@media (prefers-reduced-motion: no-preference) {
+  main[data-page="home"][aria-busy] .cmd {
+    opacity: 0;
+  }
+}
+.unplayed,
+.unrevealed {
+  opacity: 0;
+}
+.cursor.typing {
+  animation: none;
+}
+@keyframes blink {
+  50% {
+    background: transparent;
+    color: inherit;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* tmux status line                                                   */
+/* ------------------------------------------------------------------ */
+
+.tmux {
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  gap: 2ch;
+  background: var(--bar-bg);
+  color: var(--bar-ink);
+  padding: 0 1ch env(safe-area-inset-bottom);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.tmux a {
+  color: inherit;
+  text-decoration: none;
+  padding: 0 0.5ch;
+}
+.tmux a:hover {
+  background: var(--bar-ink);
+  color: var(--bar-bg);
+}
+.tmux a[aria-current="page"] {
+  font-weight: 700;
+}
+.tmux a[aria-current="page"]::after {
+  content: "*";
+}
+.tmux a:not([aria-current="page"])::after {
+  content: "\00a0";
+}
+.tmux .session {
+  margin-right: 1ch;
+}
+.tmux .right {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 560px) {
+  .tmux .session,
+  .tmux .host {
+    display: none;
+  }
+}
+
+/* Help overlay (press ?) */
+.help {
+  position: fixed;
+  inset: auto 1ch 2.5lh auto;
+  z-index: 6;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: 7px;
+  padding: 1lh 2ch;
+  max-width: calc(100vw - 2ch);
+}
+.help[hidden] {
+  display: none;
+}
+.help dl {
+  display: grid;
+  grid-template-columns: 8ch auto;
+  column-gap: 2ch;
+}
+.help kbd {
+  font: inherit;
+  font-weight: 700;
+}
+
+footer.colophon {
+  margin-top: 3lh;
+  color: var(--dim);
+}
+
+@media (max-width: 560px) {
+  body {
+    font-size: 13px;
+  }
+  .screen {
+    padding: 1.5lh 2ch 2lh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor {
+    animation: none;
+  }
+  * {
+    transition: none !important;
+  }
+}
+
+@media print {
+  .unplayed,
+  .unrevealed {
+    opacity: 1;
+    clip-path: none !important;
+  }
+  html,
+  body {
+    height: auto;
+    overflow: visible;
+  }
+  body {
+    display: block;
+  }
+  .scroller {
+    overflow: visible;
+  }
+  .tmux,
+  .help,
+  .repl,
+  .skip {
+    display: none !important;
+  }
+}

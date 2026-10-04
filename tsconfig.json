@@ -1,0 +1,21 @@
+{
+  // The server, tests, and config. Node runs these .ts files directly
+  // (type stripping), so this config only type-checks.
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "noUncheckedIndexedAccess": false,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src/server.ts", "src/worker.ts", "src/types.d.ts", "tests/**/*.ts", "playwright.config.ts", "eslint.config.ts"]
+}

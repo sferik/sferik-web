@@ -1,0 +1,88 @@
+{
+  "name": "Erik Berlin",
+  "formerName": "Erik Michaels-Ober",
+  "handle": "sferik",
+  "location": "San Francisco, California",
+  "tagline": "I build libraries and tools software engineers depend on.",
+  "email": "sferik@gmail.com",
+  "url": "https://sferik.com",
+  "finger": {
+    "login": "sferik",
+    "name": "Erik Berlin",
+    "directory": "/Users/sferik",
+    "shell": "/opt/homebrew/bin/fish",
+    "plan": "Ship small, sharp tools."
+  },
+  "profiles": [
+    {
+      "network": "GitHub",
+      "username": "sferik",
+      "url": "https://github.com/sferik",
+      "icon": "github",
+      "aliases": ["github", "gh"]
+    },
+    {
+      "network": "X",
+      "username": "sferik",
+      "url": "https://x.com/sferik",
+      "icon": "x",
+      "aliases": ["x", "twitter"]
+    },
+    {
+      "network": "Bluesky",
+      "username": "sferik",
+      "url": "https://bsky.app/profile/sferik.bsky.social",
+      "icon": "bluesky",
+      "aliases": ["bluesky", "bsky"]
+    },
+    {
+      "network": "Mastodon",
+      "username": "sferik",
+      "url": "https://mastodon.social/@sferik",
+      "icon": "mastodon",
+      "aliases": ["mastodon"]
+    },
+    {
+      "network": "LinkedIn",
+      "username": "sferik",
+      "url": "https://www.linkedin.com/in/sferik",
+      "icon": "linkedin",
+      "aliases": ["linkedin"]
+    },
+    {
+      "network": "Instagram",
+      "username": "sferik",
+      "url": "https://www.instagram.com/sferik/",
+      "icon": "instagram",
+      "aliases": ["instagram", "ig"]
+    },
+    {
+      "network": "RubyGems",
+      "username": "sferik",
+      "url": "https://rubygems.org/profiles/sferik",
+      "icon": "rubygems",
+      "aliases": ["rubygems", "gems"]
+    },
+    {
+      "network": "Speaker Deck",
+      "username": "sferik",
+      "url": "https://speakerdeck.com/sferik",
+      "icon": "speakerdeck",
+      "aliases": ["speakerdeck", "slides"]
+    },
+    {
+      "network": "Stack Overflow",
+      "username": "sferik",
+      "url": "https://stackoverflow.com/users/209190/sferik",
+      "icon": "stackoverflow",
+      "aliases": ["stackoverflow", "so"]
+    },
+    {
+      "network": "Hacker News",
+      "username": "sferik",
+      "url": "https://news.ycombinator.com/user?id=sferik",
+      "icon": "ycombinator",
+      "aliases": ["hn", "hackernews"]
+    }
+  ]
+}

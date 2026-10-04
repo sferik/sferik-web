@@ -1,0 +1,35 @@
+// Cloudflare Workers configuration. See src/worker.ts, and the README's
+// "Deploying" section for the one-time setup.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "sferik",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-09-30",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // public/, including the compiled browser code (bun run build). The Worker
+  // runs first for every request, since even "/" depends on the Accept header;
+  // it reads these through the ASSETS binding.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "html_handling": "none",
+    "not_found_handling": "none",
+  },
+
+  // Live downloads, stars, contributions, and the latest push, refreshed by the
+  // cron below. Wrangler creates the namespace on the first deploy.
+  "kv_namespaces": [{ "binding": "LIVE" }],
+  "triggers": { "crons": ["*/15 * * * *"] },
+
+  "observability": { "enabled": true },
+
+  // Once the domains' DNS is on Cloudflare, serve the site from them:
+  // "routes": [
+  //   { "pattern": "sferik.com", "custom_domain": true },
+  //   { "pattern": "sferik.org", "custom_domain": true },
+  //   { "pattern": "sferik.net", "custom_domain": true },
+  //   { "pattern": "sferik.me", "custom_domain": true },
+  // ],
+}

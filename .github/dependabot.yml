@@ -1,0 +1,25 @@
+# Weekly pull requests to keep the dev dependencies and GitHub Actions up to
+# date. A release must be a week old before Dependabot proposes it, which gives
+# time for a broken or compromised version to be caught and pulled.
+version: 2
+updates:
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      dev-dependencies:
+        patterns: ["*"]
+    ignore:
+      # typescript-eslint doesn't support TypeScript 7 yet:
+      # https://github.com/typescript-eslint/typescript-eslint/issues/10940
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

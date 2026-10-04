@@ -1,0 +1,10 @@
+node_modules/
+public/*.js
+public/*.js.map
+public/share/
+coverage/
+test-results/
+playwright-report/
+bun.lock
+data/contributions.json
+.wrangler/
