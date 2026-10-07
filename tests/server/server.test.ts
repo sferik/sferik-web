@@ -228,6 +228,10 @@ describe("offline (snapshots from data/)", () => {
     assert.equal(JSON.parse((await app.get("/talks", { accept: JSON_ })).body).talks.length, 23);
     const talks = (await app.get("/talks")).body;
     assert.match(talks, /^Mar 2011 {2}GUI Programming with MacRuby$/m);
+    assert.match(
+      talks,
+      /^Mar 2015 {2}Secrets to Powerful APIs \(panel\)\n {10}SXSW, Austin\n {10}link: {3}schedule\.sxsw\.com\/2015\/events\/event_IAP35000$/m,
+    );
     assert.match(talks, /\nPodcasts:\nFeb 2016 {2}The Crystal Programming Language \(Ruby Rogues, episode 248\)\n {10}topenddevs\.com/);
     // Lines fit in 80 columns, except a URL too long to fit anywhere (it can't be broken).
     for (const line of talks.split("\n")) assert.ok(line.length <= 80 || /^ +(\w+: +)?\S{60,}$/.test(line), line);
@@ -513,6 +517,10 @@ describe("offline (snapshots from data/)", () => {
     assert.equal(first.performer.alternateName, "Erik Michaels-Ober");
     assert.equal(first.recordedIn.url, "https://www.youtube.com/watch?v=6lQeBfSVrpk");
     assert.equal(first.subjectOf.url, "https://speakerdeck.com/sferik/the-value-of-being-lazy");
+    // A talk with a page on the event's site has that as its URL.
+    const panel = list.itemListElement.find((e: { item: { superEvent: { name: string } } }) => e.item.superEvent.name === "SXSW").item;
+    assert.equal(panel.url, "https://schedule.sxsw.com/2015/events/event_IAP35000");
+    assert.equal(first.url, undefined);
     // A talk without a video or slides has neither.
     const bare = list.itemListElement.map((e: { item: object }) => e.item).find((t: object) => !("recordedIn" in t) && !("subjectOf" in t));
     assert.ok(bare);
@@ -579,6 +587,8 @@ describe("offline (snapshots from data/)", () => {
     assert.match(res.body, /<link rel="alternate" type="text\/html" title="Video" href="https:\/\/www\.youtube\.com\/watch\?v=6lQeBfSVrpk"\/>/);
     assert.match(res.body, /<link rel="related" type="text\/html" title="Slides" href="https:\/\/speakerdeck\.com\/sferik\/the-value-of-being-lazy"\/>/);
     assert.match(res.body, /<summary>Rails Israel, Tel Aviv<\/summary>/);
+    // A talk's page on the event's site is a link of its own.
+    assert.match(res.body, /<link rel="related" type="text\/html" title="Link" href="https:\/\/schedule\.sxsw\.com\/2015\/events\/event_IAP35000"\/>/);
     // A talk with neither slides nor video links to its year on the talks page.
     assert.match(res.body, /href="https:\/\/sferik\.net\/talks#y\d{4}"\/>/);
   });

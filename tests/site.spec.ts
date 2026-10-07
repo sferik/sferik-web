@@ -825,6 +825,13 @@ test.describe("the resume", () => {
 });
 
 test.describe("the talks page", () => {
+  test("links a talk to its page on the event's site, beside its slides and video", async ({ page }) => {
+    await page.goto("/talks");
+    const panel = page.locator("li", { hasText: "Secrets to Powerful APIs (panel)" });
+    await expect(panel.getByRole("link", { name: "link" })).toHaveAttribute("href", "https://schedule.sxsw.com/2015/events/event_IAP35000");
+    await expect(page.locator("li", { hasText: "Enumerator::Lazy" }).getByRole("link")).toHaveText(["slides"]);
+  });
+
   test("links the former name to the name change, shown with git show in the home page's shell", async ({ page }) => {
     await page.goto("/talks");
     await expect(page.getByText("23 talks at 19 events in 13 countries")).toBeVisible();

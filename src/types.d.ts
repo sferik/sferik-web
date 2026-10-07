@@ -112,6 +112,7 @@ export interface Talk {
   date: string;
   slides: string | null;
   video: string | null;
+  link: string | null; // the talk's page on the event's site
   featured: boolean;
 }
 

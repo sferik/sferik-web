@@ -345,9 +345,11 @@ const RENDER: { [K in ModuleId]: (m: Modules[K]) => HTMLElement } = {
 };
 
 function talk(t: Talk, when: string) {
-  const media = [t.slides && el("a", { href: t.slides }, "slides"), t.video && el("a", { href: t.video }, "video")].filter((a): a is HTMLAnchorElement =>
-    Boolean(a),
-  );
+  const media = [
+    t.slides && el("a", { href: t.slides }, "slides"),
+    t.video && el("a", { href: t.video }, "video"),
+    t.link && el("a", { href: t.link }, "link"),
+  ].filter((a): a is HTMLAnchorElement => Boolean(a));
   return el(
     "li",
     {},

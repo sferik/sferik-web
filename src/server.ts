@@ -431,6 +431,7 @@ function createModules({ live, read }: { live: Live; read: Read }) {
             `          ${t.event}, ${t.location}`,
             ...(t.slides ? [`          slides: ${bare(t.slides)}`] : []),
             ...(t.video ? [`          video:  ${bare(t.video)}`] : []),
+            ...(t.link ? [`          link:   ${bare(t.link)}`] : []),
           ]),
         ...(limit === Infinity ? ["", "Podcasts:", ...podcastLines(m.podcasts)] : []),
       ].join("\n"),
@@ -751,6 +752,7 @@ export function talksFeed(m: Talks): string {
     const links = [
       t.video && `<link rel="alternate" type="text/html" title="Video" href="${xml(t.video)}"/>`,
       t.slides && `<link rel="related" type="text/html" title="Slides" href="${xml(t.slides)}"/>`,
+      t.link && `<link rel="related" type="text/html" title="Link" href="${xml(t.link)}"/>`,
     ].filter(Boolean);
     return [
       "  <entry>",
@@ -848,8 +850,8 @@ export function personJsonLd(p: Profile, r: Resume): string {
 }
 
 // The talks as schema.org events (JSON-LD), in the talks page's HTML, so
-// search engines know them for talks: when, where, at what, and the video
-// and slides. Talks before 2017 were given as Erik Michaels-Ober.
+// search engines know them for talks: when, where, at what, and the video,
+// the slides, and the talk's page on the event's site. Talks before 2017 were given as Erik Michaels-Ober.
 export function talksJsonLd(m: Talks): string {
   const speaker = { "@type": "Person", name: "Erik Berlin", alternateName: "Erik Michaels-Ober", url: "https://sferik.net/" };
   const list = {
@@ -870,6 +872,7 @@ export function talksJsonLd(m: Talks): string {
         performer: speaker,
         ...(t.video && { recordedIn: { "@type": "CreativeWork", url: t.video } }),
         ...(t.slides && { subjectOf: { "@type": "PresentationDigitalDocument", url: t.slides } }),
+        ...(t.link && { url: t.link }),
       },
     })),
   };
