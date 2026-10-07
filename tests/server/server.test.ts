@@ -475,6 +475,8 @@ describe("offline (snapshots from data/)", () => {
     assert.match(html.body, /no such file|does not exist/);
     assert.equal((await app.get("/nope")).body, "cd: The directory '/nope' does not exist\n");
     assert.equal((await app.get("/nope", { accept: "image/png" })).status, 404);
+    // Each says its body depends on what was asked for.
+    for (const res of [json, html, await app.get("/nope")]) assert.equal(res.headers.get("vary"), "Accept");
   });
 
   test("400 for a path that isn't properly percent-encoded", async () => {

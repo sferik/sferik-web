@@ -1313,10 +1313,12 @@ export function createApp({
       }
     }
 
+    // Which 404 depends on what was asked for, so caches must keep them apart too.
+    const missing = { vary: "Accept", ...cors };
     if (format === "json")
-      return send(404, "application/json; charset=utf-8", JSON.stringify({ error: "Not Found", code: "not_found", path: pathname }) + "\n", cors);
-    if (format === "html") return send(404, TYPES[".html"], await asset("404.html"));
-    return send(404, "text/plain; charset=utf-8", `cd: The directory '${pathname}' does not exist\n`, cors);
+      return send(404, "application/json; charset=utf-8", JSON.stringify({ error: "Not Found", code: "not_found", path: pathname }) + "\n", missing);
+    if (format === "html") return send(404, TYPES[".html"], await asset("404.html"), { vary: "Accept" });
+    return send(404, "text/plain; charset=utf-8", `cd: The directory '${pathname}' does not exist\n`, missing);
   }
 
   // A failure in one request answers 500 instead of taking the server down.
