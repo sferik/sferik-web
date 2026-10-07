@@ -29,9 +29,6 @@ if (!location.hash && !$("[autofocus]")) {
   scroller.focus({ preventScroll: true });
 }
 
-// Offline support (sw.ts). Without it (where it's blocked), the site just needs the network.
-navigator.serviceWorker.register("/sw.js").catch(() => {});
-
 // The resume's print button (an event listener, since the CSP allows no inline ones).
 $(".print-btn")?.addEventListener("click", () => print());
 
@@ -732,6 +729,11 @@ export const ready: Promise<unknown> = main
         document.addEventListener("visibilitychange", beat);
       })
   : Promise.resolve();
+
+// Offline support (sw.ts). Without it (where it's blocked), the site just
+// needs the network. Installing it fetches every page and file, some thirty
+// requests, so it waits until this page is built, and has what it needs.
+void ready.then(() => navigator.serviceWorker.register("/sw.js").catch(() => {}));
 
 // The interactive shell lives in shell.js, which loads once the page is built,
 // so it doesn't hold up the first paint. The shortcuts below only need to find it.

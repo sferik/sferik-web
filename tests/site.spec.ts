@@ -677,6 +677,17 @@ test.describe("offline", () => {
     expect(asked).toBe(1);
   });
 
+  test("is registered once the page is built, so installing it doesn't compete with the page", async ({ page, context }) => {
+    const busy: boolean[] = [];
+    await context.route("**/sw.js", async (route) => {
+      busy.push(await page.evaluate(() => document.querySelector("main")!.hasAttribute("aria-busy")));
+      await route.fallback();
+    });
+    await page.goto("/");
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    expect(busy).toEqual([false]);
+  });
+
   test("without the service worker, the site still works", async ({ page, context }) => {
     await context.route("**/sw.js", (route) => route.abort());
     const errors: string[] = [];
