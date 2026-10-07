@@ -144,6 +144,9 @@ describe("negotiate", () => {
     assert.equal(negotiate("application/json;q=0.2, text/plain;q=0.9"), "text");
     assert.equal(negotiate("image/png"), null);
     assert.equal(negotiate("text/html;q=0"), null);
+    // A q that's no number is as good as none.
+    assert.equal(negotiate("application/json;q=high"), "json");
+    assert.equal(negotiate("application/json;q=high, text/plain;q=0.5"), "json");
   });
 
   test("stripTags removes markup and decodes entities", () => {
@@ -908,6 +911,9 @@ describe("live data", () => {
     const res = await app.get("/whoami", { accept: JSON_ });
     assert.equal(res.status, 500);
     assert.equal(res.body, "Internal Server Error\n");
+    // With the headers everything else has, to any origin.
+    assert.match(res.headers.get("content-security-policy")!, /^default-src 'self'/);
+    assert.deepEqual([res.headers.get("x-content-type-options"), res.headers.get("access-control-allow-origin")], ["nosniff", "*"]);
     assert.equal(errors.calls, 1);
     assert.equal((await app.get("/whoami", { accept: JSON_ })).status, 500);
     await app.close();
@@ -996,7 +1002,8 @@ function validate(spec: Schema, schema: Schema, value: unknown, at = "$"): strin
 
 describe("the OpenAPI spec", () => {
   const spec = JSON.parse(fs.readFileSync(path.join(ROOT, "public", "openapi.json"), "utf8")) as Schema;
-  const paths = spec.paths as Record<string, { get?: { responses: { "200": { content: Record<string, { schema: Schema }> } } } }>;
+  type Operation = { parameters?: { name: string; in: string; example: string }[]; responses: { "200": { content: Record<string, { schema: Schema }> } } };
+  const paths = spec.paths as Record<string, { get?: Operation }>;
 
   test("is served at /openapi.json, to any origin", async () => {
     const app = await serve({ offline: true });
@@ -1026,8 +1033,10 @@ describe("the OpenAPI spec", () => {
       t.after(() => app.close());
       for (const [url, item] of Object.entries(paths)) {
         if (!item.get) continue; // /write only takes POST; the tests below cover it
+        // With the example of each parameter it takes: WebFinger's account.
+        const query = new URLSearchParams((item.get.parameters ?? []).map((p) => [p.name, p.example])).toString();
         for (const [type, { schema }] of Object.entries(item.get.responses["200"].content)) {
-          const res = await app.get(url, { accept: type });
+          const res = await app.get(query ? `${url}?${query}` : url, { accept: type });
           assert.equal(res.status, 200, `${url} as ${type}`);
           assert.equal(res.type.split(";")[0], type, `${url} as ${type}`);
           if (type === JSON_) assert.deepEqual(validate(spec, schema, JSON.parse(res.body)), [], `${url} as JSON`);
@@ -1035,6 +1044,10 @@ describe("the OpenAPI spec", () => {
       }
     });
   }
+
+  test("describes what isn't a resource, too: the feed, the version, the motto, and WebFinger", () => {
+    for (const url of ["/talks.atom", "/version", "/.signature", "/.well-known/webfinger"]) assert.ok(paths[url]?.get, `${url} is in the spec`);
+  });
 
   test("the validator catches what doesn't fit", () => {
     const s = (schema: Schema, value: unknown) => validate(spec, schema, value);

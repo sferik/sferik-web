@@ -759,6 +759,116 @@
           }
         }
       }
+    },
+    "/talks.atom": {
+      "get": {
+        "operationId": "getTalksFeed",
+        "summary": "The talks, as a feed",
+        "description": "The talks as an Atom feed, newest first. Talks are dated to the month, so each is dated its first day.",
+        "responses": {
+          "200": {
+            "description": "The feed",
+            "content": {
+              "application/atom+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/version": {
+      "get": {
+        "operationId": "getVersion",
+        "summary": "The deployed commit",
+        "description": "Which commit of the site is deployed, and when it was. A copy of the site that wasn't deployed (one run by hand) says null for each.",
+        "responses": {
+          "200": {
+            "description": "The commit, when it was deployed, and where to read it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Version"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.signature": {
+      "get": {
+        "operationId": "getSignature",
+        "summary": "The motto",
+        "description": "~/.signature: the motto the home page shows, as cat .signature.",
+        "responses": {
+          "200": {
+            "description": "The motto, and a newline",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/webfinger": {
+      "get": {
+        "operationId": "getWebFinger",
+        "summary": "WebFinger",
+        "description": "WebFinger (RFC 7033) for sferik@sferik.net, and the same at sferik.com, sferik.org, and sferik.me, which points to the Mastodon account, so the domain works as a fediverse handle.",
+        "parameters": [
+          {
+            "name": "resource",
+            "in": "query",
+            "required": true,
+            "description": "The account, as an acct: URI",
+            "schema": {
+              "type": "string"
+            },
+            "example": "acct:sferik@sferik.net"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account's JSON Resource Descriptor",
+            "content": {
+              "application/jrd+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebFinger"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No resource parameter",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "Bad Request: the resource parameter is required\n"
+              }
+            }
+          },
+          "404": {
+            "description": "No such account",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "No such account: acct:someone@example.com\n"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1706,6 +1816,68 @@
           }
         },
         "required": ["message"],
+        "additionalProperties": false
+      },
+      "Version": {
+        "type": "object",
+        "properties": {
+          "commit": {
+            "type": ["string", "null"],
+            "description": "The commit's SHA"
+          },
+          "deployed": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "When it was deployed"
+          },
+          "url": {
+            "type": ["string", "null"],
+            "format": "uri",
+            "description": "The commit, on GitHub"
+          }
+        },
+        "required": ["commit", "deployed", "url"],
+        "additionalProperties": false
+      },
+      "WebFinger": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "The account this one points to, as an acct: URI"
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rel": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "href": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "template": {
+                  "type": "string"
+                }
+              },
+              "required": ["rel"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["subject", "aliases", "links"],
         "additionalProperties": false
       }
     },

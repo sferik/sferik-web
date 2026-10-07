@@ -1151,7 +1151,9 @@ export function negotiate(accept: string | undefined, formats: Format[] = ["html
   const prefs = (accept || "*/*").split(",").map((part) => {
     const [type, ...params] = part.trim().toLowerCase().split(";");
     const q = params.find((p) => p.trim().startsWith("q="));
-    return { type: type.trim(), q: q ? Number(q.trim().slice(2)) : 1 };
+    const weight = q ? Number(q.trim().slice(2)) : 1;
+    // A q that's no number (q=high) says nothing, so it's as if it weren't there.
+    return { type: type.trim(), q: Number.isNaN(weight) ? 1 : weight };
   });
   const q = (...types: string[]) => Math.max(0, ...prefs.filter((p) => types.includes(p.type)).map((p) => p.q));
   const scores = formats.map((f): [Format, number] => [f, q(...MEDIA[f])]);
@@ -1486,11 +1488,13 @@ export function createApp({
     return send(404, "text/plain; charset=utf-8", `cd: The directory '${pathname}' does not exist\n`, missing);
   }
 
-  // A failure in one request answers 500 instead of taking the server down.
+  // A failure in one request answers 500 instead of taking the server down,
+  // with the headers everything else has: to any origin, so a page elsewhere
+  // that asked the API can tell a failure from no answer at all.
   return (req: IncomingMessage, res: ServerResponse) =>
     handle(req, res).catch((err: unknown) => {
       console.error(err);
-      res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+      res.writeHead(500, { "content-type": "text/plain; charset=utf-8", ...SECURITY_HEADERS, "access-control-allow-origin": "*" });
       res.end("Internal Server Error\n");
     });
 }
