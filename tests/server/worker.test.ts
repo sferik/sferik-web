@@ -74,6 +74,19 @@ describe("the Worker", () => {
     assert.equal((await get(e, "/whoami", "image/png")).status, 406);
   });
 
+  test("reads figlet's font for the first home page, and not again for the next", async () => {
+    const e = env();
+    await get(e, "/", "text/html");
+    const fetched: string[] = [];
+    const assets = e.ASSETS.fetch;
+    e.ASSETS.fetch = (request) => {
+      fetched.push(new URL(request.url).pathname);
+      return assets(request);
+    };
+    assert.match(await (await get(e, "/", "text/html")).text(), /<pre class="figlet"/);
+    assert.deepEqual(fetched, ["/index.html"]);
+  });
+
   test("serves the resume as a PDF, as bytes", async () => {
     const res = await get(env(), "/resume.pdf");
     assert.equal(res.headers.get("content-type"), "application/pdf");

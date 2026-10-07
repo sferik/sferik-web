@@ -1106,6 +1106,10 @@ export const nodeFiles = (root: string): Files => ({
   },
 });
 
+// figlet's font, for the home page's banner. Read and parsed once, not once
+// an app: on Workers an app answers one request, so each home page read it again.
+let font: Font | undefined;
+
 export function createApp({
   fetch = globalThis.fetch,
   offline = false,
@@ -1123,7 +1127,6 @@ export function createApp({
   const read = files.data as Read;
   const asset = async (name: string) => (await files.asset(name))!.body; // for files that always exist
   const site = createModules({ live: createLive({ fetch, offline, now, timeout, token, store, refresh }), read });
-  let font: Font | undefined; // figlet's, for the home page's banner
   const figletFont = async () => (font ??= parseFont(new TextDecoder().decode(await asset("share/standard.flf"))));
 
   // Representations of each resource: [json, text].
