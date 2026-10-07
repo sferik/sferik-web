@@ -626,6 +626,27 @@ test.describe("offline", () => {
     await expect(page.locator(".repl-log")).toContainText("Ruby Rogues");
   });
 
+  test("keeps one copy of a page, however it's asked for, and nothing a query string makes endless", async ({ page, context }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/robots.txt"); // on the site, before its service worker is
+    await page.evaluate(() => caches.open("sferik")); // left by an earlier version
+    await page.goto("/");
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.reload();
+    const kept = () => page.evaluate(async () => (await (await caches.open("sferik-2")).keys()).map((r) => r.url.replace(location.origin, "")).sort());
+    const before = await kept();
+    expect(before).toContain("/?as=html");
+    await run(page, "ping -c 2 sferik.net");
+    await expect(page.locator(".repl-log")).toContainText("2 packets transmitted");
+    await page.goto("/?run=whoami");
+    expect(await kept()).toEqual(before);
+    expect(await page.evaluate(() => caches.keys())).toEqual(["sferik-2"]);
+    // A link that runs a command still opens without a network: it's the home page.
+    await context.setOffline(true);
+    await page.goto("/?run=whoami");
+    await expect(page.locator(".repl-log")).toContainText("I've spent nearly two decades");
+  });
+
   test("without the service worker, the site still works", async ({ page, context }) => {
     await context.route("**/sw.js", (route) => route.abort());
     const errors: string[] = [];

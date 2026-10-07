@@ -21,7 +21,7 @@ interface SwScope {
 }
 const sw = self as unknown as SwScope;
 
-const CACHE = "sferik";
+const CACHE = "sferik-2"; // a new name leaves the last one behind, which activating deletes
 // The pages' files, and the shell's (cat .plan works offline too).
 const FILES = [
   "/site.css",
@@ -44,11 +44,18 @@ const PAGES = ["/", "/talks", "/resume"];
 const DATA = ["/", "/whoami", "/dependency", "/contributions", "/src", "/name", "/talks", "/finger", "/resume"];
 
 // The same URL is a page, JSON, or text, depending on what's asked for, so
-// keep each kind separately.
+// keep each kind separately. A query string doesn't count: /?run=whoami is
+// the same page as /.
 const key = (request: Request) => {
   const accept = request.headers.get("accept") ?? "";
   const kind = request.mode === "navigate" || accept.includes("text/html") ? "html" : accept.includes("json") ? "json" : "other";
-  return `${request.url.split("#")[0]}${request.url.includes("?") ? "&" : "?"}as=${kind}`;
+  const url = new URL(request.url);
+  return `${url.origin}${url.pathname}?as=${kind}`;
+};
+// Every response, or none: with a page missing, or an error in place of one, it's better to try again on the next visit.
+const good = (response: Response) => {
+  if (!response.ok) throw new Error(`${response.url}: ${response.status}`);
+  return response;
 };
 
 sw.addEventListener("install", (e) => {
@@ -61,20 +68,30 @@ sw.addEventListener("install", (e) => {
   e.waitUntil(
     caches
       .open(CACHE)
-      .then((cache) => Promise.all(requests.map(async (r) => cache.put(key(r), await fetch(r)))))
+      .then((cache) => Promise.all(requests.map(async (r) => cache.put(key(r), good(await fetch(r))))))
       .then(() => sw.skipWaiting()),
   );
 });
 
-sw.addEventListener("activate", (e) => e.waitUntil(sw.clients.claim()));
+sw.addEventListener("activate", (e) =>
+  e.waitUntil(
+    caches
+      .keys()
+      .then((names) => Promise.all(names.filter((name) => name !== CACHE).map((name) => caches.delete(name))))
+      .then(() => sw.clients.claim()),
+  ),
+);
 
 sw.addEventListener("fetch", (e) => {
   const request = e.request;
-  if (request.method !== "GET" || new URL(request.url).origin !== location.origin) return;
+  const url = new URL(request.url);
+  if (request.method !== "GET" || url.origin !== location.origin) return;
   e.respondWith(
     fetch(request).then(
       (response) => {
-        if (response.ok) {
+        // Not what was asked for with a query string (ping's /robots.txt?ping=1, a link's /?run=whoami): there's
+        // no end to those, so keeping each would fill the cache.
+        if (response.ok && !url.search) {
           const copy = response.clone();
           e.waitUntil(caches.open(CACHE).then((cache) => cache.put(key(request), copy)));
         }
