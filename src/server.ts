@@ -789,6 +789,26 @@ const SITEMAP = [
   "",
 ].join("\n");
 
+// Who the site is about, as a schema.org Person (JSON-LD), in the home page's
+// HTML, for search engines: the name and the one before it, the job, the
+// honors, and every profile (sameAs), from the same data as the page and the
+// resume, so a profile added to one is in the other.
+export function personJsonLd(p: Profile, r: Resume): string {
+  const person = {
+    "@context": "https://schema.org",
+    "@type": "Person",
+    name: p.name,
+    alternateName: [r.basics.formerName, p.handle],
+    url: `${p.url}/`,
+    jobTitle: r.basics.label,
+    address: { "@type": "PostalAddress", addressLocality: r.basics.location.city, addressRegion: r.basics.location.region },
+    award: r.awards.map((a) => `${a.title} (${a.date.slice(0, 4)})`),
+    alumniOf: r.education.map((e) => e.institution),
+    sameAs: p.profiles.map((profile) => profile.url),
+  };
+  return `<script type="application/ld+json">${JSON.stringify(person).replace(/</g, "\\u003c")}</script>`;
+}
+
 // The talks as schema.org events (JSON-LD), in the talks page's HTML, so
 // search engines know them for talks: when, where, at what, and the video
 // and slides. Talks before 2017 were given as Erik Michaels-Ober.
@@ -1327,10 +1347,14 @@ export function createApp({
       }
       if (format === "html") {
         const file = PAGES[pathname] ?? PAGES["/"];
-        // The home page gets its h-card, and the talks page its JSON-LD.
+        // The home page gets its h-card and who it's about, and the talks page its JSON-LD.
         let page = new TextDecoder().decode(await asset(file));
-        if (file === "index.html")
-          page = page.replace('<header class="banner" data-profile></header>', banner((await read("profile")) as Profile, await figletFont()));
+        if (file === "index.html") {
+          const profile = (await read("profile")) as Profile;
+          const person = personJsonLd(profile, await site.resume());
+          const card = banner(profile, await figletFont());
+          page = page.replace("</head>", () => `  ${person}\n  </head>`).replace('<header class="banner" data-profile></header>', () => card);
+        }
         if (file === "talks.html") page = page.replace("</head>", `  ${talksJsonLd((await site.modules.talks()) as Talks)}\n  </head>`);
         // Every page gets the JSON it builds itself from, so it needn't ask for it.
         const data = await embedded(file);

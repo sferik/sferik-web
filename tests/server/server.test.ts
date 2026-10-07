@@ -391,6 +391,34 @@ describe("offline (snapshots from data/)", () => {
     assert.match((await app.get("/", { accept: HTML })).body, /<pre>╭─+╮\n│ Erik Berlin +│[^]*sferik@mbp ~&gt; whoami\nI've spent nearly two decades/);
   });
 
+  test("the home page says who it's about, as a schema.org Person with every profile", async () => {
+    const { body } = await app.get("/", { accept: HTML });
+    const person = JSON.parse(/<script type="application\/ld\+json">(.*?)<\/script>\n {2}<\/head>/s.exec(body)![1]);
+    const profile = JSON.parse(fs.readFileSync(path.join(ROOT, "data", "profile.json"), "utf8")) as { profiles: { url: string }[] };
+    assert.deepEqual(
+      person.sameAs,
+      profile.profiles.map((p) => p.url),
+    );
+    assert.ok(person.sameAs.includes("https://stackoverflow.com/users/209190/sferik")); // one the page had left out
+    assert.deepEqual(
+      { ...person, sameAs: null },
+      {
+        "@context": "https://schema.org",
+        "@type": "Person",
+        name: "Erik Berlin",
+        alternateName: ["Erik Michaels-Ober", "sferik"],
+        url: "https://sferik.net/",
+        jobTitle: "Software Engineer",
+        address: { "@type": "PostalAddress", addressLocality: "San Francisco", addressRegion: "California" },
+        award: ["Ruby Hero Award (2014)", "Code for America Fellow (2011)"],
+        alumniOf: ["Carnegie Mellon University"],
+        sameAs: null,
+      },
+    );
+    // Only the home page has it.
+    assert.doesNotMatch((await app.get("/resume", { accept: HTML })).body, /"@type":"Person","name"/);
+  });
+
   test("~/.signature is the motto", async () => {
     const res = await app.get("/.signature");
     assert.match(res.type, /^text\/plain/);
