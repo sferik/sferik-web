@@ -163,6 +163,23 @@ describe("the Worker", () => {
     assert.equal((await json(e, "/whoami")).multiDownloads, 7);
   });
 
+  test("a refresh keeps the old value of what it couldn't load, and drops what nothing asks for any more", async (t) => {
+    const e = env();
+    // What an earlier version kept: a star count for each repository, and downloads that are still wanted.
+    e.kv.set(
+      "live",
+      JSON.stringify({ "stars:sferik/multi_json": 27, "at:stars:sferik/multi_json": 1, gems: { multi_json: 5, multi_xml: 0 }, "at:gems": 1000 }),
+    );
+    const down = (async (input: string | URL | Request) =>
+      String(input).startsWith("https://rubygems.org/") ? new Response("", { status: 503 }) : upstream(input)) as typeof globalThis.fetch;
+    stub(t, globalThis, "fetch", down);
+    await worker.scheduled(undefined, e);
+    const saved = JSON.parse(e.kv.get("live")!) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(saved).sort(), ["at:contributions", "at:gems", "at:push", "at:stars", "contributions", "gems", "push", "stars"]);
+    assert.deepEqual([saved.gems, saved["at:gems"]], [{ multi_json: 5, multi_xml: 0 }, 1000]);
+    assert.equal((await json(e, "/whoami")).multiDownloads, 5);
+  });
+
   test("keeps who's logged in in the Durable Object, which every request shares", async () => {
     const e = env();
     const res = await post(e, "/who?token=0123456789abcdef&page=/talks");

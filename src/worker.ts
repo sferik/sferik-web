@@ -66,17 +66,28 @@ const files = (env: Env): Files => ({
 });
 
 // Every live value in one KV entry: requests read it once, and a refresh
-// writes it once, which keeps well inside KV's free limits.
+// writes it once, which keeps well inside KV's free limits. What's saved is
+// what was loaded or asked for since the entry was read: a refresh asks for
+// the old value of anything it couldn't load, so that's kept, and a value
+// nothing asks for any more (one an earlier version kept) is left behind.
 const LIVE_KEY = "live";
 export function kvStore(kv: Env["LIVE"]): Store & { save(): Promise<void> } {
   let values: Promise<Record<string, unknown>> | undefined;
   const load = () => (values ??= kv.get(LIVE_KEY, "json").then((v) => (v ?? {}) as Record<string, unknown>));
+  const used = new Set<string>();
   return {
-    get: async (key) => (await load())[key],
+    async get(key) {
+      used.add(key);
+      return (await load())[key];
+    },
     async put(key, value) {
+      used.add(key);
       (await load())[key] = value;
     },
-    save: async () => kv.put(LIVE_KEY, JSON.stringify(await load())),
+    async save() {
+      const all = await load();
+      await kv.put(LIVE_KEY, JSON.stringify(Object.fromEntries([...used].filter((key) => key in all).map((key) => [key, all[key]]))));
+    },
   };
 }
 
