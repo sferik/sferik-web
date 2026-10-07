@@ -12,12 +12,40 @@
   "workers_dev": true,
   "preview_urls": false,
   // public/, including the compiled browser code (bun run build). The Worker
-  // runs first for every request, since even "/" depends on the Accept header;
-  // it reads these through the ASSETS binding.
+  // runs first for every page and resource, since even "/" depends on the
+  // Accept header; it reads the pages through the ASSETS binding. Scripts,
+  // styles, images, and figlet's font are the same for everyone, so they go
+  // straight from the assets without running the Worker, with the headers in
+  // public/_headers. Each is listed by name, so a path that only looks like
+  // one (/typo.png) still reaches the Worker, for its 404; a test checks that
+  // none is missing. A file left off would still be served, by the Worker.
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "run_worker_first": true,
+    "run_worker_first": [
+      "/*",
+      "!/dom.js",
+      "!/dom.js.map",
+      "!/figlet.js",
+      "!/figlet.js.map",
+      "!/qr.js",
+      "!/qr.js.map",
+      "!/shell.js",
+      "!/shell.js.map",
+      "!/site.js",
+      "!/site.js.map",
+      "!/sw.js",
+      "!/sw.js.map",
+      "!/site.css",
+      "!/favicon.svg",
+      "!/icons.svg",
+      "!/og.png",
+      "!/og-resume.png",
+      "!/og-talks.png",
+      "!/img/dependency.webp",
+      "!/img/dependency-2x.webp",
+      "!/share/standard.flf",
+    ],
     "html_handling": "none",
     "not_found_handling": "none",
   },

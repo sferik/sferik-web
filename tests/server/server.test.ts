@@ -258,6 +258,48 @@ describe("offline (snapshots from data/)", () => {
     }
   });
 
+  test("public/_headers, for the files Cloudflare serves without the Worker, has the same security headers", async () => {
+    const lines = fs.readFileSync(path.join(ROOT, "public", "_headers"), "utf8").split("\n");
+    const everything = lines.slice(lines.indexOf("/*") + 1);
+    const rules = everything.slice(0, everything.indexOf("")).map((line) => line.trim().split(": "));
+    const { headers } = await app.get("/whoami");
+    assert.equal(rules.length, 5);
+    for (const [name, value] of rules) assert.equal(headers.get(name), value, name);
+    // And the same caching as the Node server gives each kind of file: one where
+    // every file exists, since the scripts do only once they're built.
+    const built = await serve({ offline: true, files: { ...nodeFiles(ROOT), asset: async () => ({ body: Buffer.from("x") }) } });
+    for (const [rule, file] of [
+      ["/*.js", "/site.js"],
+      ["/*.css", "/site.css"],
+      ["/*.js.map", "/site.js.map"],
+      ["/*.svg", "/icons.svg"],
+      ["/*.png", "/og.png"],
+      ["/img/*", "/img/dependency.webp"],
+      ["/share/*", "/share/standard.flf"],
+    ]) {
+      const cache = lines[lines.indexOf(rule) + 1].trim();
+      assert.equal(cache, `Cache-Control: ${(await built.get(file)).headers.get("cache-control")}`, rule);
+    }
+    await built.close();
+    assert.equal((await app.get("/_headers")).status, 404); // it's not a file to serve
+  });
+
+  test("wrangler.jsonc lists every script, style, image, and font for Cloudflare to serve without the Worker", () => {
+    const config = fs.readFileSync(path.join(ROOT, "wrangler.jsonc"), "utf8");
+    const listed = [...config.matchAll(/"!(\/[^"]+)"/g)].map((m) => m[1]).sort();
+    const files = (dir: string, kinds: RegExp) => fs.readdirSync(path.join(ROOT, dir)).filter((name) => kinds.test(name));
+    const expected = [
+      // What the browser code compiles to, whether or not it has been.
+      ...files("src/client", /\.ts$/).flatMap((name) => [`/${name.replace(/\.ts$/, ".js")}`, `/${name.replace(/\.ts$/, ".js.map")}`]),
+      ...files("public", /\.(css|svg|png)$/).map((name) => `/${name}`),
+      ...files("public/img", /^[^.]/).map((name) => `/img/${name}`),
+      ...files("public/share", /^[^.]/).map((name) => `/share/${name}`),
+    ].sort();
+    assert.deepEqual(listed, expected);
+    // None is a pattern: a path that only looks like a file's is the Worker's to answer.
+    assert.ok(listed.every((file) => !file.includes("*")));
+  });
+
   test("/resume.json is valid JSON Resume, against the schema it names", async () => {
     // tests/fixtures/resume-schema.json is github.com/jsonresume/resume-schema (MIT) at faeb0ac, the
     // latest schema, which allows sections of your own (like patents and speaking); v1.0.0 doesn't.

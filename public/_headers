@@ -1,0 +1,32 @@
+# Headers for the files Cloudflare serves straight from the assets, without
+# running the Worker (see run_worker_first in wrangler.jsonc): the security
+# headers the Worker sends with everything else (SECURITY_HEADERS in
+# src/server.ts; a test keeps the two the same), and how long to keep each.
+
+/*
+  Content-Security-Policy: default-src 'self'; connect-src 'self' https:; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=(), midi=(), interest-cohort=()
+  X-Content-Type-Options: nosniff
+
+# Scripts and styles are checked on every load, like the pages, so a new
+# version never runs with an old one.
+/*.js
+  Cache-Control: no-cache
+/*.css
+  Cache-Control: no-cache
+
+/*.js.map
+  Cache-Control: public, max-age=300
+/*.svg
+  Cache-Control: public, max-age=300
+/*.png
+  Cache-Control: public, max-age=300
+/img/*
+  Cache-Control: public, max-age=300
+
+# figlet's font, which has no type of its own.
+/share/*
+  Cache-Control: public, max-age=300
+  Content-Type: text/plain; charset=utf-8
