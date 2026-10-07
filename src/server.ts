@@ -153,17 +153,42 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh }: Liv
   const cache = new Map<string, Entry>();
   const headers: Record<string, string> = { "user-agent": "sferik.net", accept: "application/json", ...(token && { authorization: `Bearer ${token}` }) };
 
-  async function getJSON<T>(url: string): Promise<T> {
+  async function getJSON<T>(url: string, init: RequestInit = {}): Promise<T> {
     const timer = new AbortController();
     const t = setTimeout(() => timer.abort(), timeout);
     try {
-      const res = await fetch(url, { headers, signal: timer.signal });
+      const res = await fetch(url, { ...init, headers, signal: timer.signal });
       if (!res.ok) throw new Error(`${url}: ${res.status}`);
       return (await res.json()) as T;
     } finally {
       clearTimeout(t);
     }
   }
+
+  // GitHub's GraphQL API, which answers only with a token. An answer with
+  // errors has failed, whatever its status says.
+  async function graphql<T>(query: string): Promise<T> {
+    const { data, errors } = await getJSON<{ data?: T; errors?: { message: string }[] }>("https://api.github.com/graphql", {
+      method: "POST",
+      body: JSON.stringify({ query }),
+    });
+    if (!data || errors?.length) throw new Error(`GitHub: ${errors?.[0].message ?? "no data"}`);
+    return data;
+  }
+
+  // A year of contributions, from GitHub itself: the calendar on the profile
+  // page. shade() gives the days their levels.
+  type Calendar = {
+    user: { contributionsCollection: { contributionCalendar: { weeks: { contributionDays: { date: string; contributionCount: number }[] }[] } } };
+  };
+  const CALENDAR = `query { user(login: "sferik") { contributionsCollection { contributionCalendar { weeks { contributionDays { date contributionCount } } } } } }`;
+  const calendar = async (): Promise<Day[]> =>
+    (await graphql<Calendar>(CALENDAR)).user.contributionsCollection.contributionCalendar.weeks.flatMap((week) =>
+      week.contributionDays.map((day) => ({ date: day.date, count: day.contributionCount, level: 0 })),
+    );
+  // The same, from a service that reads it off the profile page: someone
+  // else's, which could go away, so it's for when there's no token, or GitHub fails.
+  const scraped = async () => (await getJSON<{ contributions: Day[] }>("https://github-contributions-api.jogruber.de/v4/sferik?y=last")).contributions;
 
   function cached<T>(key: string, ttl: number, load: () => Promise<T>): Promise<T | undefined> {
     if (offline) return Promise.resolve(undefined);
@@ -216,12 +241,7 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh }: Liv
       }),
     stars: (repo: string) =>
       cached(`stars:${repo}`, 6 * HOUR, async () => (await getJSON<{ stargazers_count: number }>(`https://api.github.com/repos/${repo}`)).stargazers_count),
-    contributions: () =>
-      cached(
-        "contributions",
-        HOUR,
-        async () => (await getJSON<{ contributions: Day[] }>("https://github-contributions-api.jogruber.de/v4/sferik?y=last")).contributions,
-      ),
+    contributions: () => cached("contributions", HOUR, () => (token ? calendar().catch(scraped) : scraped())),
     lastPush: () =>
       cached("push", 5 * 60e3, async (): Promise<Push | null> => {
         type Event = { type: string; repo: { name: string }; payload?: { head?: string }; created_at: string };

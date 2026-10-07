@@ -674,6 +674,55 @@ describe("live data", () => {
     await app.close();
   });
 
+  test("with a token, the contributions come from GitHub itself, and from elsewhere only if that fails", async () => {
+    const calendar = {
+      weeks: [{ contributionDays: [{ date: "2026-10-04", contributionCount: 2 }] }, { contributionDays: [{ date: "2026-10-05", contributionCount: 5 }] }],
+    };
+    const answers: object[] = [
+      { data: { user: { contributionsCollection: { contributionCalendar: calendar } } } },
+      { errors: [{ message: "rate limited" }] },
+      {},
+    ];
+    for (const [answer, total] of [
+      [answers[0], 7],
+      [answers[1], 8], // the other service's fixture
+      [answers[2], 8],
+      [{ ...answers[0], ...answers[1] }, 8], // some of an answer, and an error: not an answer
+    ] as const) {
+      const net = fakeNet({ "https://api.github.com/graphql": async () => Response.json(answer) });
+      const app = await serve({ fetch: net.fetch, token: "secret" });
+      const graph = JSON.parse((await app.get("/contributions", { accept: JSON_ })).body);
+      assert.deepEqual([graph.live, graph.total], [true, total]);
+      const asked = net.calls.find((c) => c.url === "https://api.github.com/graphql")!;
+      assert.equal(asked.init.method, "POST");
+      assert.match(JSON.parse(asked.init.body as string).query, /user\(login: "sferik"\) \{ contributionsCollection/);
+      assert.equal((asked.init.headers as Record<string, string>).authorization, "Bearer secret");
+      assert.equal(
+        net.calls.some((c) => c.url.includes("jogruber")),
+        total === 8,
+      );
+      await app.close();
+    }
+    // Shaded like any other: GitHub's days come without levels.
+    const net = fakeNet({ "https://api.github.com/graphql": async () => Response.json(answers[0]) });
+    const app = await serve({ fetch: net.fetch, token: "secret" });
+    const days = JSON.parse((await app.get("/contributions", { accept: JSON_ })).body).contributions as { level: number }[];
+    assert.deepEqual(
+      days.map((d) => d.level),
+      [1, 4],
+    );
+    await app.close();
+    // Without a token, GitHub isn't asked.
+    const anonymous = fakeNet();
+    const open = await serve({ fetch: anonymous.fetch });
+    await open.get("/contributions", { accept: JSON_ });
+    assert.equal(
+      anonymous.calls.some((c) => c.url.endsWith("/graphql")),
+      false,
+    );
+    await open.close();
+  });
+
   test("falls back to snapshots when services fail or time out", async () => {
     const hang = (init: RequestInit) => new Promise<Response>((_, reject) => init.signal!.addEventListener("abort", () => reject(new Error("timeout"))));
     const net = fakeNet({

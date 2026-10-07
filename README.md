@@ -125,7 +125,8 @@ curl -H 'Accept: application/json' localhost:3745/        # what the home page b
 
 ### Live data
 
-The server fetches downloads from RubyGems and stars, contributions, and the latest push from GitHub, then caches them: an hour for most things, five minutes for
+The server fetches downloads from RubyGems and stars, contributions, and the latest push from GitHub (the contributions from its GraphQL API, which
+needs `GITHUB_TOKEN`; without one, from [a service](https://github.com/grubersjoe/github-contributions-api) that reads them off the profile page), then caches them: an hour for most things, five minutes for
 the latest push. A request never waits on a slow API once the cache is warm. Stale values are served while a refresh runs in the background, and if RubyGems or
 GitHub is down, responses fall back to the snapshots in `data/`. `/contributions` and `/src` say which in `live`, and when the numbers are from in `asOf`.
 
@@ -144,11 +145,11 @@ an error has a `code` (`busy`, `full`, `too_long`, …) to tell it from the othe
 
 ## Configuration
 
-| Variable         | Default | Purpose                                                                                    |
-| ---------------- | ------- | ------------------------------------------------------------------------------------------ |
-| `PORT`           | `3745`  | Port to listen on (`0` picks a free one)                                                   |
-| `GITHUB_TOKEN`   | none    | Raises GitHub's rate limit from 60 to 5,000 requests an hour                               |
-| `SFERIK_OFFLINE` | unset   | Set to anything to skip live data and serve only the snapshots (the browser tests do this) |
+| Variable         | Default | Purpose                                                                                                    |
+| ---------------- | ------- | ---------------------------------------------------------------------------------------------------------- |
+| `PORT`           | `3745`  | Port to listen on (`0` picks a free one)                                                                   |
+| `GITHUB_TOKEN`   | none    | Raises GitHub's rate limit from 60 to 5,000 requests an hour, and lets the server use GitHub's GraphQL API |
+| `SFERIK_OFFLINE` | unset   | Set to anything to skip live data and serve only the snapshots (the browser tests do this)                 |
 
 ## Project layout
 

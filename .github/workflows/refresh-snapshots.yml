@@ -21,15 +21,8 @@ jobs:
         with:
           node-version: 26
 
-      - name: Download contributions
-        run: |
-          curl -fsSL --retry 3 "https://github-contributions-api.jogruber.de/v4/sferik?y=last" -o /tmp/contributions.json
-          # Only accept a well-formed response with a full year of days.
-          jq -e '(.contributions | length) >= 365 and (.total | type == "object")' /tmp/contributions.json > /dev/null
-          mv /tmp/contributions.json data/contributions.json
-
       # Node runs the script as it is (type stripping), so there's nothing to install.
-      - name: Refresh downloads and stars
+      - name: Refresh downloads, stars, and contributions
         run: node scripts/snapshot.ts
         env:
           GITHUB_TOKEN: ${{ github.token }}
