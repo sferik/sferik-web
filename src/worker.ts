@@ -163,7 +163,8 @@ const LIVE_PATHS = ["/contributions", "/src"];
 // resource's JSON, text, and the like say changes only when the live data is
 // refreshed, and they say how long they're good for (Cache-Control: public,
 // max-age), so for that long they're kept here, and answered without reading
-// KV or building them again. Who's on isn't (no-store).
+// KV or building them again. So is who's on, for the few seconds it says, so
+// that asking over and over isn't a request to the Durable Object each time.
 //
 // A page tells browsers to check for a new one on every load (no-cache), and
 // building one is the most work the Worker does: every resource it shows, as

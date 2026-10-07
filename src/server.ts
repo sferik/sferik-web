@@ -932,8 +932,17 @@ export function createHost(storage: HostStorage, now: () => number = Date.now, l
     seen: number;
   }
   const sent = new Map<string, number>(); // address → when it last sent mail
+  // The terminals are read from storage once, and after that are kept here
+  // too: a check-in writes its own, where it used to read everyone's first. On
+  // Workers the host forgets them whenever it's been idle, and reads them again.
+  let kept: Promise<Map<string, Tty>> | undefined;
+  const stored = () =>
+    (kept ??= storage.list<Tty>({ prefix: "tty:" }).catch((err: unknown) => {
+      kept = undefined; // to try again, the next time
+      throw err;
+    }));
   async function ttys() {
-    const all = await storage.list<Tty>({ prefix: "tty:" });
+    const all = await stored();
     for (const [key, t] of all)
       if (now() - t.seen > LOGGED_IN) {
         all.delete(key);
@@ -1247,7 +1256,9 @@ export function createApp({
   resources["/who"] = {
     json: async () => ({ users: await host.who() }),
     text: async () => whoText(await host.who()),
-    cache: "no-store",
+    // Good for a few seconds, which on Workers is how long Cloudflare's cache
+    // answers for the host: looking is free, but not asking the host each time.
+    cache: "public, max-age=5",
   };
   const formatsOf = (r: Resource): Format[] => ["html", "json", "text", ...(["latex", "pdf", "vcard"] as const).filter((f) => r[f])];
   const SUFFIX: Record<string, Format> = { json: "json", txt: "text", tex: "latex", pdf: "pdf", vcf: "vcard" };

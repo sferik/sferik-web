@@ -1091,7 +1091,7 @@ describe("who's logged in", () => {
     assert.deepEqual([again.you, again.users[0].page, again.users[0].login], ["ttys000", "/resume", "2026-10-06T20:00:00.000Z"]);
     // Anyone can ask who's on, as JSON or as who's output; nobody's tokens are in it.
     const json = await app.get("/who", { accept: JSON_ });
-    assert.equal(json.headers.get("cache-control"), "no-store");
+    assert.equal(json.headers.get("cache-control"), "public, max-age=5"); // a few seconds, so a cache can answer for the host
     assert.deepEqual(
       JSON.parse(json.body).users.map((u: { tty: string }) => u.tty),
       ["ttys000", "ttys001"],
@@ -1103,6 +1103,32 @@ describe("who's logged in", () => {
     assert.equal((await app.get("/who")).body, ""); // like who, which prints nothing with nobody on
     assert.equal(JSON.parse((await app.get(`/who?token=${"e".repeat(16)}&page=/`, { method: "POST" })).body).you, "ttys000");
     await app.close();
+  });
+
+  test("the host reads the terminals from its storage once, and keeps them there for the next host", async () => {
+    const storage = memoryStorage();
+    let lists = 0;
+    let down = true;
+    const counted = {
+      ...storage,
+      list: <T>(options: { prefix: string }) => (lists++, down ? Promise.reject<Map<string, T>>(new Error("storage is down")) : storage.list<T>(options)),
+    };
+    const host = createHost(counted, () => 0);
+    // A read that fails is tried again.
+    await assert.rejects(host.who(), /storage is down/);
+    down = false;
+    assert.equal((await host.beat(TOKEN, "/")).you, "ttys000");
+    assert.equal((await host.beat("f".repeat(16), "/talks")).you, "ttys001");
+    assert.equal((await host.who()).length, 2);
+    assert.equal(lists, 2);
+    // What it kept in memory is in storage too: a host that starts over (a Durable Object that was idle) has it.
+    assert.deepEqual(
+      (await createHost(storage, () => 0).who()).map((u) => [u.tty, u.page]),
+      [
+        ["ttys000", "/"],
+        ["ttys001", "/talks"],
+      ],
+    );
   });
 
   test("turns away a check-in without a good token or page", async () => {

@@ -282,10 +282,17 @@ describe("the Worker", () => {
     // If-None-Match goes to the cache, which answers it.
     await worker.fetch(new Request("https://sferik.net/whoami", { headers: { accept: "application/json", "if-none-match": '"abc"' } }), e, CTX);
     assert.equal(asked.at(-1), '"abc"');
-    // Not kept: who's on, what wasn't found, what doesn't say, what says to check every time
-    // (but for a page), and what a POST says.
+    // Who's on is kept too, for the few seconds it says: the Durable Object isn't asked again.
+    assert.equal((await get(e, "/who", "application/json")).headers.get("cache-control"), "public, max-age=5");
+    await Promise.all(waiting);
+    assert.equal(kept.size, 4);
+    const mbp = e.MBP.get;
+    e.MBP.get = () => assert.fail("the Durable Object was asked");
+    assert.deepEqual(await (await get(e, "/who", "application/json")).json(), { users: [] });
+    e.MBP.get = mbp;
+    // Not kept: what wasn't found, what doesn't say, what says to check every time (but for a
+    // page), and what a POST says.
     for (const [url, accept] of [
-      ["/who", "application/json"],
       ["/version", "application/json"],
       ["/nope", "application/json"],
       ["/.signature", "text/plain"], // which doesn't say how long it's good for
@@ -293,7 +300,7 @@ describe("the Worker", () => {
       await get(e, url, accept);
     await post(e, "/who?token=0123456789abcdef&page=/");
     await Promise.all(waiting);
-    assert.equal(kept.size, 3);
+    assert.equal(kept.size, 4);
   });
 
   test("keeps a page in Cloudflare's cache for a minute, though it tells browsers to check every time, until the next deploy", async (t) => {

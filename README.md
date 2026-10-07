@@ -135,7 +135,8 @@ GitHub is down, responses fall back to the snapshots in `data/`. `/contributions
 Everyone reading the site is logged in to the same computer, each browser tab a terminal of its own. A tab checks in (`POST /who`, with a random token
 and the page it's on) when its page is built and every minute it's in view, and stays logged in for three minutes after. The shell's `who`, `w`, and
 `uptime` list them. Nothing about the reader is kept beyond the token, the page, and the times. An address that checks in more than sixty times a
-minute gets a 429: on Workers, Cloudflare counts them, for that minute.
+minute gets a 429: on Workers, Cloudflare counts them, for that minute. Looking (`GET /who`) is free, and good for five seconds, so a cache can answer
+for the host.
 
 `write sferik` sends what you type (or pipe in) to `POST /write`, which emails it, with a Reply-To when the message includes an email address. One
 message a minute from any one address, twenty a day in all, and 5,000 bytes each: one past that gets a 429, with the seconds to wait as its
