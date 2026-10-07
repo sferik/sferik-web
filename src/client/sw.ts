@@ -1,7 +1,8 @@
 // The service worker, so the site and its shell keep working offline. Every
 // request goes to the network first, and what comes back is kept; when the
 // network can't be reached, the kept copy is served instead. Installing it
-// keeps the pages and their files, so even the first visit works offline later.
+// keeps the pages, the JSON they build themselves from, and their files, so
+// even the first visit works offline later.
 //
 // A classic script, not a module: not every browser runs module service workers.
 
@@ -27,7 +28,9 @@ const FILES = [
   "/site.js",
   "/shell.js",
   "/dom.js",
+  "/figlet.js",
   "/qr.js",
+  "/share/standard.flf",
   "/icons.svg",
   "/favicon.svg",
   "/img/dependency.webp",
@@ -36,6 +39,9 @@ const FILES = [
   "/humans.txt",
   "/robots.txt",
 ];
+const PAGES = ["/", "/talks", "/resume"];
+// What the pages build themselves from, and the shell's commands read: each resource, as JSON.
+const DATA = ["/", "/whoami", "/dependency", "/contributions", "/src", "/name", "/talks", "/finger", "/resume"];
 
 // The same URL is a page, JSON, or text, depending on what's asked for, so
 // keep each kind separately.
@@ -46,11 +52,16 @@ const key = (request: Request) => {
 };
 
 sw.addEventListener("install", (e) => {
-  const pages = ["/", "/talks", "/resume"].map((url) => new Request(url, { headers: { accept: "text/html" } }));
+  // A page's first requests come before this has taken over, so it asks again for all of them.
+  const requests = [
+    ...PAGES.map((url) => new Request(url, { headers: { accept: "text/html" } })),
+    ...DATA.map((url) => new Request(url, { headers: { accept: "application/json" } })),
+    ...FILES.map((url) => new Request(url)),
+  ];
   e.waitUntil(
     caches
       .open(CACHE)
-      .then((cache) => Promise.all([...pages, ...FILES.map((url) => new Request(url))].map(async (r) => cache.put(key(r), await fetch(r)))))
+      .then((cache) => Promise.all(requests.map(async (r) => cache.put(key(r), await fetch(r)))))
       .then(() => sw.skipWaiting()),
   );
 });

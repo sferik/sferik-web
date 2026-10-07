@@ -595,21 +595,35 @@ test.describe("offline", () => {
   test("after one visit, the pages and the shell work without a network", async ({ page, context }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/");
+    // Installed: it has kept the pages, their JSON, and their files, though this page loaded without it.
     await page.evaluate(() => navigator.serviceWorker.ready);
-    await page.reload(); // now the service worker answers, and keeps what it fetches
-    await expect(page.locator("#finger-cmd")).toBeVisible();
-    await page.goto("/talks");
-    await page.goto("/");
     await context.setOffline(true);
     await page.reload();
     await expect(page.locator(".banner h1")).toHaveText("Erik Berlin");
     await expect(page.locator("#finger-cmd")).toHaveText("sferik@mbp ~> finger sferik");
     await run(page, "cat .plan");
     await expect(page.locator(".repl-log")).toContainText("Ship small, sharp tools.");
+    await run(page, "figlet hi");
+    await expect(page.locator(".repl-log")).toContainText("| |__ (_)");
     await page.goto("/talks");
     await expect(page.locator("h1")).toContainText("ls -lt ~/talks");
+    await page.goto("/resume");
+    await expect(page.locator("main")).toContainText("General Commands Manual");
     // A page it never fetched isn't there.
     await expect(page.goto("/nope-never-visited")).rejects.toThrow();
+  });
+
+  test("keeps what it fetches, for the next time there's no network", async ({ page, context }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/");
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.reload(); // now the service worker answers
+    await run(page, "curl sferik.net/podcasts");
+    await expect(page.locator(".repl-log")).toContainText("Ruby Rogues");
+    await context.setOffline(true);
+    await run(page, "clear");
+    await run(page, "curl sferik.net/podcasts");
+    await expect(page.locator(".repl-log")).toContainText("Ruby Rogues");
   });
 
   test("without the service worker, the site still works", async ({ page, context }) => {
