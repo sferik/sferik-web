@@ -7,3 +7,4 @@ public/*.js
 public/*.js.map
 .wrangler/
 .dev.vars
+.DS_Store
