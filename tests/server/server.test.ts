@@ -52,9 +52,21 @@ type App = {
   close: () => Promise<void>;
 };
 
+// Every server a test starts. A test closes its own on its last line, which it
+// never reaches if an assertion fails first; then the server would keep the
+// run from ending. So whatever is still open when the tests are done is closed.
+const servers = new Set<http.Server>();
+after(() => {
+  for (const server of servers) {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
 // Start an app on a random port; returns a request helper.
 async function serve(options: AppOptions): Promise<App> {
   const server = http.createServer(createApp(options));
+  servers.add(server);
   await new Promise<void>((r) => server.listen(0, r));
   const base = `http://localhost:${(server.address() as AddressInfo).port}`;
   const get: App["get"] = async (url, { accept, method = "GET", headers = {}, body } = {}) => {
@@ -65,6 +77,7 @@ async function serve(options: AppOptions): Promise<App> {
   return {
     get,
     close: () => {
+      servers.delete(server);
       server.closeAllConnections();
       return new Promise<void>((r) => server.close(() => r()));
     },
@@ -1154,8 +1167,9 @@ describe("write", () => {
 
 // ---------------------------------------------------------- the binary
 
-test("node src/server.ts starts, serves, and shuts down on SIGTERM", async () => {
+test("node src/server.ts starts, serves, and shuts down on SIGTERM", async (t) => {
   const child = spawn("node", [path.join(ROOT, "src/server.ts")], { env: { ...process.env, PORT: "0", SFERIK_OFFLINE: "1" } });
+  t.after(() => void child.kill("SIGKILL")); // if it's still running: an assertion failed
   const url = await new Promise<string>((resolve) => child.stdout.once("data", (d) => resolve(String(d).match(/http:\/\/\S+/)![0])));
   const res = await fetch(url + "/name", { headers: { accept: JSON_ } });
   assert.equal((await res.json()).commit, "8c0d698");
