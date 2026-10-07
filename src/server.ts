@@ -54,7 +54,8 @@ const PROMPT = "sferik@mbp ~> ";
 
 // ------------------------------------------------------------- formatting
 
-const fmt = (n: number) => n.toLocaleString("en-US");
+// One formatter, made once: toLocaleString makes one each time it's called.
+const fmt = new Intl.NumberFormat("en-US").format;
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" };
 export const stripTags = (html: string) => html.replace(/<[^>]+>/g, "").replace(/&(amp|lt|gt|quot|#39);/g, (_, e: string) => ENTITIES[e]);
