@@ -190,6 +190,27 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh }: Liv
   // else's, which could go away, so it's for when there's no token, or GitHub fails.
   const scraped = async () => (await getJSON<{ contributions: Day[] }>("https://github-contributions-api.jogruber.de/v4/sferik?y=last")).contributions;
 
+  // Each repository's stars: repository → stars. With a token, all in one
+  // request, where a request each would be most of the fifty a Worker on the
+  // free plan may make at a time.
+  const starred = async (repos: string[]): Promise<Record<string, number>> => {
+    const fields = repos.map((repo, i) => {
+      const [owner, name] = repo.split("/");
+      return `r${i}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { stargazerCount }`;
+    });
+    const data = await graphql<Record<string, { stargazerCount: number }>>(`query { ${fields.join(" ")} }`);
+    return Object.fromEntries(repos.map((repo, i) => [repo, data[`r${i}`].stargazerCount]));
+  };
+  // Or a request each, keeping the ones that answer. None at all is a failure.
+  const counted = async (repos: string[]): Promise<Record<string, number>> => {
+    const counts = await Promise.allSettled(
+      repos.map(async (repo) => [repo, (await getJSON<{ stargazers_count: number }>(`https://api.github.com/repos/${repo}`)).stargazers_count] as const),
+    );
+    const answered = counts.flatMap((count) => (count.status === "fulfilled" ? [count.value] : []));
+    if (!answered.length) throw new Error("GitHub: no stars");
+    return Object.fromEntries(answered);
+  };
+
   function cached<T>(key: string, ttl: number, load: () => Promise<T>): Promise<T | undefined> {
     if (offline) return Promise.resolve(undefined);
     if (store) {
@@ -239,8 +260,7 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh }: Liv
         const list = await getJSON<{ name: string; downloads: number }[]>("https://rubygems.org/api/v1/owners/sferik/gems.json");
         return Object.fromEntries(list.map((g) => [g.name, g.downloads])) as Record<string, number>;
       }),
-    stars: (repo: string) =>
-      cached(`stars:${repo}`, 6 * HOUR, async () => (await getJSON<{ stargazers_count: number }>(`https://api.github.com/repos/${repo}`)).stargazers_count),
+    stars: (repos: string[]) => cached("stars", 6 * HOUR, () => (token ? starred(repos).catch(() => counted(repos)) : counted(repos))),
     contributions: () => cached("contributions", HOUR, () => (token ? calendar().catch(scraped) : scraped())),
     lastPush: () =>
       cached("push", 5 * 60e3, async (): Promise<Push | null> => {
@@ -270,19 +290,14 @@ type Read = <K extends keyof DataFiles>(name: K) => Promise<DataFiles[K]>;
 function createModules({ live, read }: { live: Live; read: Read }) {
   async function projectsData(): Promise<Src> {
     const data = await read("projects");
-    const gems = await live.gems();
-    const projects = await Promise.all(
-      data.projects.map(async (p) => {
-        const liveStars = p.repo ? await live.stars(p.repo) : undefined;
-        return {
-          name: p.name,
-          url: p.url,
-          description: p.description,
-          downloads: p.gem ? (gems?.[p.gem] ?? p.downloads) : null,
-          stars: liveStars ?? p.stars,
-        };
-      }),
-    );
+    const [gems, stars] = await Promise.all([live.gems(), live.stars(data.projects.flatMap((p) => p.repo ?? []))]);
+    const projects = data.projects.map((p) => ({
+      name: p.name,
+      url: p.url,
+      description: p.description,
+      downloads: p.gem ? (gems?.[p.gem] ?? p.downloads) : null,
+      stars: (p.repo ? stars?.[p.repo] : undefined) ?? p.stars,
+    }));
     const isGem = (p: { downloads: number | null }) => Number(p.downloads !== null);
     projects.sort((a, b) => isGem(b) - isGem(a) || (isGem(a) ? b.downloads! - a.downloads! : b.stars! - a.stars!));
     // Related projects ("with") sit together, even out of order. A project

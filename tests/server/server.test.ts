@@ -723,6 +723,48 @@ describe("live data", () => {
     await open.close();
   });
 
+  test("with a token, every repository's stars come in one request; without, in one each, keeping those that answer", async () => {
+    type Project = { name: string; stars: number | null };
+    const src = async (app: App) => (JSON.parse((await app.get("/src", { accept: JSON_ })).body) as { projects: Project[] }).projects;
+    const stars = (projects: Project[], name: string) => projects.find((p) => p.name === name)!.stars;
+    const repos = (JSON.parse(fs.readFileSync(path.join(ROOT, "data", "projects.json"), "utf8")) as { projects: { repo: string | null }[] }).projects.flatMap(
+      (p) => p.repo ?? [],
+    );
+
+    // One request, asking for each repository by owner and name, in order.
+    let query = "";
+    const net = fakeNet({
+      "https://api.github.com/graphql": async (init) => {
+        query = JSON.parse(init.body as string).query;
+        return Response.json(query.includes("stargazerCount") ? { data: Object.fromEntries(repos.map((_, i) => [`r${i}`, { stargazerCount: 100 + i }])) } : {});
+      },
+    });
+    const app = await serve({ fetch: net.fetch, token: "secret" });
+    const all = await src(app);
+    assert.equal(stars(all, "multi_json"), 100 + repos.indexOf("sferik/multi_json"));
+    assert.equal(stars(all, "simplecov"), 100 + repos.indexOf("simplecov-ruby/simplecov"));
+    assert.ok(query.includes(`r0: repository(owner: "${repos[0].split("/")[0]}", name: "${repos[0].split("/")[1]}") { stargazerCount }`));
+    assert.equal(net.calls.filter((c) => c.url.startsWith("https://api.github.com/repos/")).length, 0);
+    await app.close();
+
+    // Without a token, a request each; one that fails leaves its snapshot.
+    const some = fakeNet({});
+    const fetch = (async (input: string | URL | Request, init?: RequestInit) =>
+      String(input) === "https://api.github.com/repos/sferik/multi_json"
+        ? new Response("", { status: 404 })
+        : some.fetch(input, init)) as typeof globalThis.fetch;
+    const partial = await serve({ fetch });
+    const mixed = await src(partial);
+    assert.deepEqual([stars(mixed, "multi_json"), stars(mixed, "multi_xml")], [snapshot("multi_json").stars, 1234]);
+    assert.equal(some.calls.filter((c) => c.url.startsWith("https://api.github.com/repos/")).length, repos.length - 1);
+    await partial.close();
+
+    // None answering leaves every snapshot.
+    const none = await serve({ fetch: (async () => new Response("", { status: 403 })) as typeof globalThis.fetch });
+    assert.equal(stars(await src(none), "multi_xml"), snapshot("multi_xml").stars);
+    await none.close();
+  });
+
   test("falls back to snapshots when services fail or time out", async () => {
     const hang = (init: RequestInit) => new Promise<Response>((_, reject) => init.signal!.addEventListener("abort", () => reject(new Error("timeout"))));
     const net = fakeNet({
