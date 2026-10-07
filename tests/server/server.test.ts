@@ -50,6 +50,7 @@ interface Got {
 type App = {
   get: (url: string, opts?: { accept?: string; method?: string; headers?: Record<string, string>; body?: string }) => Promise<Got>;
   close: () => Promise<void>;
+  origin: string;
 };
 
 // Every server a test starts. A test closes its own on its last line, which it
@@ -76,6 +77,7 @@ async function serve(options: AppOptions): Promise<App> {
   };
   return {
     get,
+    origin: base,
     close: () => {
       servers.delete(server);
       server.closeAllConnections();
@@ -982,6 +984,35 @@ describe("who's logged in", () => {
       const res = await app.get(`/who${query}`, { method: "POST", accept: JSON_ });
       assert.deepEqual([res.status, res.type, JSON.parse(res.body)], [400, "application/json; charset=utf-8", { error: "token and page are required", code }]);
     }
+    await app.close();
+  });
+
+  test("the POSTs turn away another site's page, but not this site's, or curl", async () => {
+    const app = await serve({ offline: true, mail: async () => {} });
+    const post = (url: string, headers: Record<string, string>) => app.get(url, { method: "POST", body: "hello", headers });
+    for (const url of [`/who?token=${TOKEN}&page=/`, "/write"]) {
+      // Browsers say where a request is from; one that's too old for Sec-Fetch-Site still sends a POST's Origin.
+      for (const headers of [
+        { "sec-fetch-site": "cross-site" },
+        { "sec-fetch-site": "same-site" },
+        { origin: "https://evil.example" },
+        { origin: "null" },
+      ] as Record<string, string>[]) {
+        const res = await post(url, { ...headers, accept: JSON_ });
+        assert.deepEqual(
+          [res.status, JSON.parse(res.body)],
+          [403, { error: "that's for this site's own pages", code: "cross_origin" }],
+          JSON.stringify(headers),
+        );
+      }
+      assert.equal((await post(url, { "sec-fetch-site": "cross-site" })).body, "Forbidden: that's for this site's own pages\n");
+    }
+    const ok = async (headers: Record<string, string>) => (await post(`/who?token=${TOKEN}&page=/`, headers)).status;
+    assert.equal(await ok({}), 200); // curl
+    assert.equal(await ok({ "sec-fetch-site": "same-origin" }), 200);
+    assert.equal(await ok({ "sec-fetch-site": "none" }), 200);
+    assert.equal(await ok({ "sec-fetch-site": "same-origin", origin: "https://evil.example" }), 200); // the browser's word wins
+    assert.equal(await ok({ origin: app.origin }), 200); // an old browser, on this site
     await app.close();
   });
 

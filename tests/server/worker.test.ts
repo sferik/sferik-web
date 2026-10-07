@@ -191,6 +191,15 @@ describe("the Worker", () => {
     assert.equal((await post(e, "/who?token=0123456789abcdef&page=/", undefined, "192.0.2.1")).status, 200);
   });
 
+  test("turns away a POST from another site's page, and takes one from its own", async () => {
+    const e = env();
+    const from = (origin: string) => post(e, "/who?token=0123456789abcdef&page=/", undefined, "192.0.2.1", { origin });
+    assert.equal((await from("https://evil.example")).status, 403);
+    assert.equal((await from("https://sferik.net")).status, 200);
+    assert.equal((await post(e, "/write", "hello", "192.0.2.1", { "sec-fetch-site": "cross-site" })).status, 403);
+    assert.equal(e.sent.length, 0);
+  });
+
   test("takes write's Idempotency-Key, so a message sent again isn't emailed twice, unless it didn't go through", async (t) => {
     stub(t, console, "error", () => {});
     const e = env();

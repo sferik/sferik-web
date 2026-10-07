@@ -103,8 +103,8 @@ const mailer = (env: Env) => async (l: Letter) =>
   env.MAIL.send(new EmailMessage(FROM, profile.email, letter(l, { from: FROM, to: profile.email, date: new Date(), id: crypto.randomUUID() })));
 
 // Run the app's Node-style handler on a Fetch API request. It only reads the
-// method, URL, Accept, If-None-Match and Idempotency-Key headers, the body (as
-// one chunk), and the visitor's address, and answers with one writeHead and
+// method, URL, a few headers (Accept, If-None-Match, Idempotency-Key, and for
+// a POST where it's from), the body (as one chunk), and the visitor's address, and answers with one writeHead and
 // one end.
 export async function serve(app: App, request: Request): Promise<Response> {
   const url = new URL(request.url);
@@ -112,7 +112,12 @@ export async function serve(app: App, request: Request): Promise<Response> {
   const req = {
     method: request.method,
     url: url.pathname + url.search,
-    headers: Object.fromEntries(["accept", "if-none-match", "idempotency-key"].map((name) => [name, request.headers.get(name) ?? undefined])),
+    headers: {
+      ...Object.fromEntries(
+        ["accept", "if-none-match", "idempotency-key", "sec-fetch-site", "origin"].map((name) => [name, request.headers.get(name) ?? undefined]),
+      ),
+      host: url.host,
+    },
     socket: { remoteAddress: request.headers.get("cf-connecting-ip") },
     async *[Symbol.asyncIterator]() {
       yield sent;

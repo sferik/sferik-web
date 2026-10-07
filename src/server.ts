@@ -998,6 +998,16 @@ const WEBFINGER = {
 
 // ------------------------------------------------------- security
 
+// Whether a request was made by another site's page. Browsers say, in
+// Sec-Fetch-Site; ones too old for that say where a POST is from, in Origin.
+// Anything else (curl, a script) says neither, and is no one's page.
+function foreign(req: IncomingMessage): boolean {
+  const site = req.headers["sec-fetch-site"];
+  if (site) return site !== "same-origin" && site !== "none";
+  const origin = req.headers.origin;
+  return origin !== undefined && origin !== `http://${req.headers.host}` && origin !== `https://${req.headers.host}`;
+}
+
 // The site loads only its own files. The shell's curl and gh fetch other
 // sites' APIs, so connections can go anywhere over HTTPS.
 const SECURITY_HEADERS = {
@@ -1222,6 +1232,11 @@ export function createApp({
       negotiate(req.headers.accept, ["text", "json"]) === "json"
         ? send(status, CONTENT_TYPE.json, JSON.stringify(json) + "\n", extra)
         : send(status, CONTENT_TYPE.text, text, extra);
+    // The two POSTs are for the site's own pages (and for curl, which says
+    // nothing of where it's from). Another site's page can't read the answer,
+    // but without this it could still send one: a form needs no permission.
+    if (req.method === "POST" && foreign(req))
+      return answer(403, "Forbidden: that's for this site's own pages\n", { error: "that's for this site's own pages", code: "cross_origin" });
     // A tab checking in, for who and w: its token and the page it's on.
     if (req.method === "POST" && pathname === "/who") {
       const token = url.searchParams.get("token") ?? "";

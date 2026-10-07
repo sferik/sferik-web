@@ -436,6 +436,26 @@
               }
             }
           },
+          "403": {
+            "description": "From another site's page",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "Forbidden: that's for this site's own pages\n"
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "that's for this site's own pages",
+                  "code": "cross_origin"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Too many check-ins from this address",
             "headers": {
@@ -538,6 +558,26 @@
                 "example": {
                   "error": "nothing to send",
                   "code": "empty"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "From another site's page",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "Forbidden: that's for this site's own pages\n"
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "that's for this site's own pages",
+                  "code": "cross_origin"
                 }
               }
             }
@@ -1605,7 +1645,7 @@
           },
           "code": {
             "type": "string",
-            "enum": ["bad_token", "bad_page", "empty", "bad_key", "too_long", "busy", "full", "undelivered", "unavailable", "not_found"],
+            "enum": ["bad_token", "bad_page", "empty", "bad_key", "too_long", "busy", "full", "undelivered", "unavailable", "not_found", "cross_origin"],
             "description": "Which error it is, for a program to tell it from the others"
           },
           "path": {
