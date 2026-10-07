@@ -45,11 +45,19 @@ const PAGES = ["/", "/talks", "/resume"];
 const DATA = ["/", "/whoami", "/dependency", "/contributions", "/src", "/name", "/talks", "/finger", "/resume"];
 
 // The same URL is a page, JSON, or text, depending on what's asked for, so
-// keep each kind separately. A query string doesn't count: /?run=whoami is
-// the same page as /.
+// keep each kind separately: and the resume is a PDF and LaTeX too, and finger
+// a contact card, which the shell's curl can ask for (-H 'Accept: application/pdf'),
+// so anything asked for by name that isn't text is a kind of its own. A query
+// string doesn't count: /?run=whoami is the same page as /.
+const kindOf = (request: Request) => {
+  const accept = (request.headers.get("accept") ?? "").toLowerCase();
+  if (request.mode === "navigate" || accept.includes("text/html")) return "html";
+  if (accept.includes("json")) return "json";
+  const first = accept.split(/[,;]/)[0].trim();
+  return ["", "*/*", "text/*", "text/plain"].includes(first) ? "other" : first;
+};
 const key = (request: Request) => {
-  const accept = request.headers.get("accept") ?? "";
-  const kind = request.mode === "navigate" || accept.includes("text/html") ? "html" : accept.includes("json") ? "json" : "other";
+  const kind = kindOf(request);
   const url = new URL(request.url);
   return `${url.origin}${url.pathname}?as=${kind}`;
 };

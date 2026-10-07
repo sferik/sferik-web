@@ -661,6 +661,16 @@ test.describe("offline", () => {
     await expect(page.locator(".repl-log")).toContainText("I've spent nearly two decades");
   });
 
+  test("keeps a resource's PDF apart from its text, so one isn't answered with the other", async ({ page, context }) => {
+    await page.goto("/");
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.reload(); // now the service worker answers
+    const start = (accept: string) => page.evaluate(async (type) => (await (await fetch("/resume", { headers: { accept: type } })).text()).slice(0, 9), accept);
+    expect([await start("text/plain"), await start("application/pdf")]).toEqual(["SFERIK(1)", "%PDF-1.4\n"]);
+    await context.setOffline(true);
+    expect([await start("text/plain"), await start("application/pdf"), await start("*/*")]).toEqual(["SFERIK(1)", "%PDF-1.4\n", "SFERIK(1)"]);
+  });
+
   test("answers with what it kept when the network takes too long", async ({ page, context }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/");
