@@ -11,6 +11,7 @@ import { $, $$, closest, el, fmt, MON, reduceMotion, span } from "./dom.js";
 import { figletLines, parseFont, type Font } from "./figlet.js";
 import { qr } from "./qr.js";
 import { blocks, checkIn, getJSON, ready } from "./site.js";
+import { vcard } from "./vcard.js";
 import type { Dependency, Finger, Who, Whoami } from "../types.js";
 
 // ------------------------------------------------------------------ types
@@ -714,39 +715,6 @@ const fail = (out: string | null, status = 1): Failure => ({ out, status });
 // ------------------------------------------------------------- commands
 
 const SITES = () => $$<HTMLAnchorElement>("[data-open]").map((a) => ({ keys: a.dataset.open!.split(" "), href: a.href }));
-
-// A contact card (vCard 3.0), with every profile, or (short) just enough
-// for a QR code. Long lines fold at 75 characters, as vCard asks.
-function vcard(m: Finger, short = false): string {
-  const esc = (v: string) => v.replace(/[\\,;]/g, (c) => `\\${c}`);
-  const fold = (line: string) => {
-    const parts = [line.slice(0, 75)];
-    for (let i = 75; i < line.length; i += 74) parts.push(` ${line.slice(i, i + 74)}`);
-    return parts.join("\r\n");
-  };
-  const [first, ...rest] = m.name.split(" ");
-  return [
-    "BEGIN:VCARD",
-    "VERSION:3.0",
-    `N:${esc(rest.join(" "))};${esc(first)};;;`,
-    `FN:${esc(m.name)}`,
-    `EMAIL;TYPE=INTERNET:${m.mail}`,
-    "TEL;TYPE=CELL:+1 415-312-2382",
-    "URL:https://sferik.net",
-    ...(short
-      ? []
-      : [
-          `NICKNAME:${m.login}`,
-          "BDAY:1983-11-24",
-          `NOTE:${esc(m.plan)}`,
-          ...m.profiles.map((p) => `X-SOCIALPROFILE;TYPE=${p.network.toLowerCase().replace(/\W/g, "")}:${p.url}`),
-        ]),
-    "END:VCARD",
-  ]
-    .map(fold)
-    .join("\r\n")
-    .concat("\r\n");
-}
 
 // Hand the browser a file to save.
 function save(name: string, text: string, type: string) {

@@ -82,7 +82,7 @@ Everything else asks for whatever format it wants.
 
 ## The API
 
-Each resource is one URL. The `Accept` header picks the representation, or add `.json`, `.txt`, `.tex`, or `.pdf` to the path.
+Each resource is one URL. The `Accept` header picks the representation, or add `.json`, `.txt`, `.tex`, `.pdf`, or `.vcf` to the path.
 
 | Accept                                  | You get                                                    |
 | --------------------------------------- | ---------------------------------------------------------- |
@@ -91,6 +91,7 @@ Each resource is one URL. The `Accept` header picks the representation, or add `
 | `text/plain`, or `*/*` (curl's default) | Terminal output, wrapped to 80 columns                     |
 | `application/x-latex` (resume only)     | A LaTeX document; compile it with `pdflatex` or `tectonic` |
 | `application/pdf` (resume only)         | A two-page PDF of the man page, with clickable links       |
+| `text/vcard` (finger only)              | A contact card, to add to an address book                  |
 
 The whole API is described in OpenAPI 3.1 at [`/openapi.json`](https://sferik.net/openapi.json) (`public/openapi.json`), so you can load it into
 Swagger UI, Postman, or a client generator. The server tests fetch every path in every format the spec lists and check each JSON response against its
@@ -108,7 +109,7 @@ Anything else gets `406 Not Acceptable`, listing the formats that resource has. 
 | `/name`          | The name change, as a git commit                                                                      |
 | `/talks`         | Conference talks and podcasts (also a page)                                                           |
 | `/podcasts`      | Podcast appearances alone, which `/talks` has too                                                     |
-| `/finger`        | Contact details and profiles                                                                          |
+| `/finger`        | Contact details and profiles (also a contact card)                                                    |
 | `/resume`        | The resume: [JSON Resume](https://jsonresume.org) as JSON, a man page as text, LaTeX, PDF, and a page |
 | `/who`           | Who's logged in: everyone reading the site, a terminal per tab (`POST` checks a tab in)               |
 | `/write`         | `POST` only: the shell's `write sferik`, which emails the body to me                                  |
@@ -117,6 +118,7 @@ Anything else gets `406 Not Acceptable`, listing the formats that resource has. 
 curl localhost:3745/src                                   # the project table
 curl localhost:3745/resume.json | jq .work[0]             # the current job
 curl -o resume.pdf localhost:3745/resume.pdf              # the resume as a PDF
+curl -o erik.vcf localhost:3745/finger.vcf                # a contact card
 curl -H 'Accept: application/x-latex' localhost:3745/resume > resume.tex && tectonic resume.tex
 curl -H 'Accept: application/json' localhost:3745/        # what the home page builds itself from
 ```
@@ -159,6 +161,7 @@ src/
   client/
     site.ts          Builds each page from the API and plays the home page as a session; shortcuts, themes, the clock
     shell.ts         The fish shell: parsing, pipes, job control, and every command
+    vcard.ts         The contact card, which the shell saves and the server serves
     dom.ts           Small DOM helpers
 data/                Content and snapshots: profile, whoami, the comic, projects, talks, resume, contributions
 scripts/             The Lighthouse budget, what draws the preview images, and what refreshes the snapshot of downloads and stars

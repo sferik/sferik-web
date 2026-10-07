@@ -331,6 +331,12 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "text/vcard": {
+                "schema": {
+                  "type": "string",
+                  "description": "A contact card (vCard 3.0), with every profile. Also at /finger.vcf."
+                }
               }
             }
           },

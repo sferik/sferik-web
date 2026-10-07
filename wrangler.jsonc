@@ -36,6 +36,8 @@
       "!/site.js.map",
       "!/sw.js",
       "!/sw.js.map",
+      "!/vcard.js",
+      "!/vcard.js.map",
       "!/site.css",
       "!/favicon.svg",
       "!/icons.svg",

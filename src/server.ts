@@ -8,6 +8,8 @@
  *   application/json  structured data (the resume follows jsonresume.org)
  *   text/plain        terminal output, so `curl sferik.net/whoami` just works
  *
+ * The resume is also LaTeX and a PDF, and finger a contact card (text/vcard).
+ *
  * Live numbers (downloads, stars, contributions, the latest push) are fetched
  * from RubyGems and GitHub on the server, cached, and fall back to the
  * snapshots in data/ when those services are slow or down.
@@ -23,6 +25,7 @@ import { gzipSync } from "node:zlib";
 import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { figletLines, parseFont, type Font } from "./client/figlet.ts";
+import { vcard } from "./client/vcard.ts";
 import type {
   Contributions,
   Day,
@@ -1027,13 +1030,14 @@ export function etag(body: string | Uint8Array): string {
 // Pick a representation from an Accept header, among the formats a resource
 // has. A bare */* (curl's default) gets text; the rest must be asked for, as
 // browsers and API clients do.
-export type Format = "html" | "json" | "text" | "latex" | "pdf";
+export type Format = "html" | "json" | "text" | "latex" | "pdf" | "vcard";
 const MEDIA: Record<Format, string[]> = {
   html: ["text/html", "application/xhtml+xml", "text/*"],
   json: ["application/json", "application/*"],
   text: ["text/plain", "text/*", "*/*"],
   latex: ["application/x-latex", "application/x-tex", "text/x-tex"],
   pdf: ["application/pdf"],
+  vcard: ["text/vcard", "text/x-vcard"],
 };
 const CONTENT_TYPE: Record<Format, string> = {
   html: "text/html; charset=utf-8",
@@ -1041,6 +1045,7 @@ const CONTENT_TYPE: Record<Format, string> = {
   text: "text/plain; charset=utf-8",
   latex: "application/x-latex; charset=utf-8",
   pdf: "application/pdf",
+  vcard: "text/vcard; charset=utf-8",
 };
 export function negotiate(accept: string | undefined, formats: Format[] = ["html", "json", "text"]): Format | null {
   const prefs = (accept || "*/*").split(",").map((part) => {
@@ -1139,12 +1144,14 @@ export function createApp({
   const figletFont = async () => (font ??= parseFont(new TextDecoder().decode(await asset("share/standard.flf"))));
 
   // Representations of each resource: [json, text].
-  // Each resource's representations beyond html. Only the resume has LaTeX and PDF.
+  // Each resource's representations beyond html. Only the resume has LaTeX and
+  // PDF, and only finger a contact card.
   interface Resource {
     json: () => Promise<unknown>;
     text: () => Promise<string>;
     latex?: () => Promise<string>;
     pdf?: () => Promise<Buffer>;
+    vcard?: () => Promise<string>;
     cache?: string;
   }
   const resources: Record<string, Resource> = {
@@ -1161,15 +1168,16 @@ export function createApp({
     resources[`/${id}`] = { json: site.modules[id], text: async () => render(await site.modules[id]()) };
   }
   resources["/index"] = resources["/"];
+  resources["/finger"].vcard = async () => vcard(await site.modules.finger());
   resources["/podcasts"] = { json: site.podcasts, text: site.podcastsText };
   resources["/who"] = {
     json: async () => ({ users: await host.who() }),
     text: async () => whoText(await host.who()),
     cache: "no-store",
   };
-  const formatsOf = (r: Resource): Format[] => ["html", "json", "text", ...(r.latex ? ["latex" as const] : []), ...(r.pdf ? ["pdf" as const] : [])];
-  const SUFFIX: Record<string, Format> = { json: "json", txt: "text", tex: "latex", pdf: "pdf" };
-  const FILENAME: Partial<Record<Format, string>> = { latex: "erik-berlin-resume.tex", pdf: "erik-berlin-resume.pdf" };
+  const formatsOf = (r: Resource): Format[] => ["html", "json", "text", ...(["latex", "pdf", "vcard"] as const).filter((f) => r[f])];
+  const SUFFIX: Record<string, Format> = { json: "json", txt: "text", tex: "latex", pdf: "pdf", vcf: "vcard" };
+  const FILENAME: Partial<Record<Format, string>> = { latex: "erik-berlin-resume.tex", pdf: "erik-berlin-resume.pdf", vcard: "erik-berlin.vcf" };
 
   // The JSON a page builds itself from, by URL, in the page itself: what it
   // would otherwise ask for as soon as it loaded (eight requests, for the home
@@ -1288,7 +1296,7 @@ export function createApp({
     let resource: Resource | undefined = resources[pathname];
     let format: Format | null;
     // /resume.pdf, /whoami.json, …: a suffix the resource supports picks the format.
-    const suffix = pathname.match(/\.(json|txt|tex|pdf)$/);
+    const suffix = pathname.match(/\.(json|txt|tex|pdf|vcf)$/);
     const base = suffix ? resources[pathname.slice(0, -suffix[0].length) || "/"] : undefined;
     if (suffix && base && formatsOf(base).includes(SUFFIX[suffix[1]])) {
       resource = base;

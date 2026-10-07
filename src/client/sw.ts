@@ -30,6 +30,7 @@ const FILES = [
   "/dom.js",
   "/figlet.js",
   "/qr.js",
+  "/vcard.js",
   "/share/standard.flf",
   "/icons.svg",
   "/favicon.svg",

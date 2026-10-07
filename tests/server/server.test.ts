@@ -563,6 +563,22 @@ describe("offline (snapshots from data/)", () => {
     assert.equal(res.body, "Bad Request: the path isn't properly percent-encoded\n");
   });
 
+  test("finger as a contact card, for an address book", async () => {
+    const card = await app.get("/finger", { accept: "text/vcard" });
+    assert.deepEqual([card.status, card.type], [200, "text/vcard; charset=utf-8"]);
+    assert.equal(card.headers.get("content-disposition"), 'inline; filename="erik-berlin.vcf"');
+    assert.match(card.body, /^BEGIN:VCARD\r\nVERSION:3\.0\r\nN:Berlin;Erik;;;\r\nFN:Erik Berlin\r\nEMAIL;TYPE=INTERNET:sferik@gmail\.com\r\n/);
+    assert.match(card.body, /\r\nX-SOCIALPROFILE;TYPE=github:https:\/\/github\.com\/sferik\r\n/);
+    assert.ok(card.body.endsWith("\r\nEND:VCARD\r\n"));
+    for (const line of card.body.split("\r\n")) assert.ok(line.length <= 75, line); // folded, as vCard asks
+    assert.equal((await app.get("/finger.vcf")).body, card.body);
+    // Only finger has one, and only for the asking: curl still gets text.
+    assert.match((await app.get("/finger")).type, /^text\/plain/);
+    assert.equal((await app.get("/whoami", { accept: "text/vcard" })).status, 406);
+    assert.equal((await app.get("/whoami.vcf")).status, 404);
+    assert.match((await app.get("/finger", { accept: "image/png" })).body, /Try text\/html, application\/json, text\/plain, or text\/vcard\./);
+  });
+
   test("the podcasts alone, which the talks have too", async () => {
     const talks = JSON.parse((await app.get("/talks", { accept: JSON_ })).body) as { podcasts: { title: string; show: string }[] };
     assert.deepEqual(JSON.parse((await app.get("/podcasts", { accept: JSON_ })).body), { command: "ls -lt ~/podcasts", podcasts: talks.podcasts });
