@@ -947,6 +947,18 @@ describe("who's logged in", () => {
     await app.close();
   });
 
+  test("with a ration, turns away an address that checks in too often", async () => {
+    let allowed = true;
+    const app = await serve({ offline: true, limit: async () => allowed });
+    assert.equal((await app.get(`/who?token=${TOKEN}&page=/`, { method: "POST" })).status, 200);
+    allowed = false;
+    const res = await app.get(`/who?token=${TOKEN}&page=/`, { method: "POST", accept: JSON_ });
+    assert.deepEqual([res.status, res.headers.get("retry-after")], [429, "60"]);
+    assert.deepEqual(JSON.parse(res.body), { error: "a check-in a minute is plenty", code: "busy" });
+    assert.equal((await app.get("/who")).status, 200); // looking is free
+    await app.close();
+  });
+
   test("has room for a thousand terminals; after that, a tab can only look", async () => {
     const host = createHost(memoryStorage(), () => 0);
     for (let i = 0; i < 1000; i++) await host.beat(`token-${String(i).padStart(10, "0")}`, "/");

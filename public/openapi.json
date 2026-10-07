@@ -429,6 +429,34 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Too many check-ins from this address",
+            "headers": {
+              "Retry-After": {
+                "description": "The seconds to wait before checking in again",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "Too Many Requests: a check-in a minute is plenty\n"
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "a check-in a minute is plenty",
+                  "code": "busy"
+                }
+              }
+            }
           }
         }
       }

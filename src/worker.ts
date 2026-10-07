@@ -8,6 +8,7 @@
  *   live data     kept in KV by a cron trigger, so requests read it rather
  *                 than waiting on RubyGems and GitHub
  *   who's on      a Durable Object, mbp, so every tab sees the same list
+ *   rations       rate limits by address, on check-ins and write's messages
  *   write         emailed, through Email Routing
  *
  * Deploy with `bun run deploy`; see the README for the one-time setup.
@@ -15,7 +16,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { EmailMessage } from "cloudflare:email";
 import { DurableObject } from "cloudflare:workers";
-import { createApp, createHost, letter, type Files, type Host, type HostStorage, type Letter, type Store } from "./server.ts";
+import { createApp, createHost, letter, type Files, type Host, type HostStorage, type Letter, type Limit, type Store } from "./server.ts";
 import type { Page } from "./types.js";
 import contributions from "../data/contributions.json" with { type: "json" };
 import dependency from "../data/dependency.json" with { type: "json" };
@@ -32,11 +33,22 @@ export interface Env {
   LIVE: { get(key: string, type: "json"): Promise<unknown>; put(key: string, value: string): Promise<void> };
   MBP: { idFromName(name: string): unknown; get(id: unknown): Host };
   MAIL: { send(message: EmailMessage): Promise<void> };
+  // Rate limits by address (wrangler.jsonc): check-ins, and write's messages.
+  CHECK_INS: RateLimit;
+  WRITES: RateLimit;
   GITHUB_TOKEN?: string;
   // Set by the deploy (wrangler deploy --var).
   COMMIT?: string;
   DEPLOYED?: string;
 }
+
+interface RateLimit {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
+}
+const allows =
+  (ration: RateLimit): Limit =>
+  async (address) =>
+    (await ration.limit({ key: address })).success;
 
 type App = ReturnType<typeof createApp>;
 
@@ -70,7 +82,7 @@ export function kvStore(kv: Env["LIVE"]): Store & { save(): Promise<void> } {
 // Object: there's one, so every tab sees the same list, and it keeps it in
 // its storage.
 export class Mbp extends DurableObject<Env> {
-  #host = createHost(this.ctx.storage as HostStorage);
+  #host = createHost(this.ctx.storage as HostStorage, Date.now, allows(this.env.WRITES));
   beat(token: string, page: Page) {
     return this.#host.beat(token, page);
   }
@@ -134,6 +146,7 @@ export default {
       token: env.GITHUB_TOKEN,
       version: { commit: env.COMMIT, deployed: env.DEPLOYED },
       host: env.MBP.get(env.MBP.idFromName("mbp")),
+      limit: allows(env.CHECK_INS),
       mail: mailer(env),
     });
     return serve(app, request);

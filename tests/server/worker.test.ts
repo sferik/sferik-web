@@ -14,14 +14,20 @@ const PUBLIC = path.join(import.meta.dirname, "..", "..", "public");
 
 // The bindings: ASSETS serves public/ from disk, LIVE is KV in a Map, MBP is
 // one Mbp with its storage in a Map, and MAIL keeps what it's sent.
+// The rate limits allow everything, until a test says otherwise.
 type Sent = { from: string; to: string; raw: string };
-function env(): Env & { kv: Map<string, string>; sent: Sent[] } {
+function env(): Env & { kv: Map<string, string>; sent: Sent[]; limited: Set<string> } {
   const kv = new Map<string, string>();
   const sent: Sent[] = [];
-  const mbp = new Mbp({ storage: memoryStorage() }, {} as Env);
+  const limited = new Set<string>();
+  const ration = { limit: async ({ key }: { key: string }) => ({ success: !limited.has(key) }) };
+  const mbp = new Mbp({ storage: memoryStorage() }, { WRITES: ration } as Env);
   return {
     kv,
     sent,
+    limited,
+    CHECK_INS: ration,
+    WRITES: ration,
     MBP: { idFromName: (name) => name, get: () => mbp },
     MAIL: { send: async (message) => void sent.push(message as unknown as Sent) },
     ASSETS: {
@@ -172,6 +178,17 @@ describe("the Worker", () => {
     const busy = await post(e, "/write", "again");
     assert.deepEqual([busy.status, busy.headers.get("retry-after")], [429, "60"]);
     assert.equal((await post(e, "/write", "from elsewhere", "192.0.2.2")).status, 202);
+  });
+
+  test("rations check-ins and write's messages by address, with Cloudflare's rate limits", async () => {
+    const e = env();
+    e.limited.add("192.0.2.9");
+    const who = await post(e, "/who?token=0123456789abcdef&page=/", undefined, "192.0.2.9");
+    assert.deepEqual([who.status, who.headers.get("retry-after")], [429, "60"]);
+    // A message from an address the Durable Object has no memory of, but Cloudflare does.
+    const write = await post(e, "/write", "hello", "192.0.2.9");
+    assert.deepEqual([write.status, write.headers.get("retry-after"), e.sent.length], [429, "60", 0]);
+    assert.equal((await post(e, "/who?token=0123456789abcdef&page=/", undefined, "192.0.2.1")).status, 200);
   });
 
   test("takes write's Idempotency-Key, so a message sent again isn't emailed twice, unless it didn't go through", async (t) => {

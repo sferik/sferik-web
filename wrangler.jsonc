@@ -63,6 +63,14 @@
     "bindings": [{ "name": "MBP", "class_name": "Mbp" }],
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Mbp"] }],
+  // Rations by address, counted at Cloudflare's edge for a minute and kept nowhere else: sixty check-ins (a tab
+  // makes one a minute, and one more whenever it comes back into view), so a script can't fill the list of who's
+  // on; and one of write's messages, which the Durable Object rations too, but only in memory, which it loses
+  // whenever it's been idle. The namespace ids are ours to choose.
+  "ratelimits": [
+    { "name": "CHECK_INS", "namespace_id": "3745", "simple": { "limit": 60, "period": 60 } },
+    { "name": "WRITES", "namespace_id": "3746", "simple": { "limit": 1, "period": 60 } },
+  ],
   // write's messages, emailed through Email Routing, and only ever to the one address it has verified.
   "send_email": [{ "name": "MAIL", "destination_address": "sferik@gmail.com", "allowed_sender_addresses": ["write@sferik.net"] }],
   "triggers": {

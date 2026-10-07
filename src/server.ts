@@ -858,7 +858,12 @@ const MAIL_EVERY = 60e3;
 const MAIL_A_DAY = 20;
 const KEEP_KEYS = 864e5;
 
-export function createHost(storage: HostStorage, now: () => number = Date.now): Host {
+// A ration by address that outlasts the host's memory: true if this one may
+// go on. On Workers it's a rate limit counted at Cloudflare's edge, since a
+// Durable Object forgets what's only in memory whenever it's been idle.
+export type Limit = (address: string) => Promise<boolean>;
+
+export function createHost(storage: HostStorage, now: () => number = Date.now, limit?: Limit): Host {
   interface Tty {
     n: number;
     page: Page;
@@ -909,6 +914,7 @@ export function createHost(storage: HostStorage, now: () => number = Date.now): 
       for (const [address, at] of sent) if (now() - at >= MAIL_EVERY) sent.delete(address);
       const last = sent.get(ip);
       if (last !== undefined) return { why: "busy", wait: Math.ceil((last + MAIL_EVERY - now()) / 1000) };
+      if (limit && !(await limit(ip))) return { why: "busy", wait: MAIL_EVERY / 1000 };
       const day = `mail:${new Date(now()).toISOString().slice(0, 10)}`;
       const count = (await storage.get<number>(day)) ?? 0;
       if (count >= MAIL_A_DAY) return { why: "full", wait: Math.ceil((864e5 - (now() % 864e5)) / 1000) }; // until the next day, in UTC
@@ -1083,6 +1089,8 @@ export interface AppOptions {
   compress?: boolean;
   // Who's logged in, and the ration of mail (a Durable Object on Workers).
   host?: Host;
+  // A ration of check-ins (POST /who) by address; without it, there's none.
+  limit?: Limit;
   // Delivers write's messages; without it, write is turned away.
   mail?: (letter: Letter) => Promise<void>;
 }
@@ -1122,6 +1130,7 @@ export function createApp({
   version = {},
   compress = false,
   host = createHost(memoryStorage(), now),
+  limit,
   mail,
 }: AppOptions = {}) {
   const read = files.data as Read;
@@ -1211,6 +1220,14 @@ export function createApp({
       const page = url.searchParams.get("page") ?? "";
       const code = !/^[\w-]{16,64}$/.test(token) ? "bad_token" : !PAGES_ON.includes(page) ? "bad_page" : null;
       if (code) return answer(400, "Bad Request: token and page are required\n", { error: "token and page are required", code });
+      // A tab checks in once a minute; an address that does it much more than its tabs would is filling the list.
+      if (limit && !(await limit(String(req.socket.remoteAddress))))
+        return answer(
+          429,
+          "Too Many Requests: a check-in a minute is plenty\n",
+          { error: "a check-in a minute is plenty", code: "busy" },
+          { "retry-after": "60" },
+        );
       return send(200, "application/json; charset=utf-8", JSON.stringify(await host.beat(token, page as Page)) + "\n", { "cache-control": "no-store" });
     }
     // write sferik: the message is the body, sent on by email.
