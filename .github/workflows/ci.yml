@@ -119,15 +119,16 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run lighthouse
 
-  # Deploy to Cloudflare once everything above passes, only for pushes to main
-  # (never pull requests). Needs the CLOUDFLARE_API_TOKEN secret (an "Edit
+  # Deploy to Cloudflare once everything above passes, only for main: a push to
+  # it, or a run started by hand or by the workflow that redraws the preview
+  # images (whose own push starts nothing). Never pull requests. Needs the CLOUDFLARE_API_TOKEN secret (an "Edit
   # Cloudflare Workers" token for the account and the sferik.net zone) and the
   # CLOUDFLARE_ACCOUNT_ID secret. The GITHUB_TOKEN the Worker uses at runtime is
   # a Worker secret, set once with `wrangler secret put`, not this workflow's.
   deploy:
     name: Deploy
     needs: [lint, typecheck, server, browser, lighthouse]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     environment:
       name: production

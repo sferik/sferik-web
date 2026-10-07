@@ -1,0 +1,47 @@
+# Redraws the link-preview images (public/og*.png, scripts/og.ts). The home
+# page's shows the last year of the contribution graph, so it goes out of date
+# as the days pass; weekly keeps it close without a new image in the
+# repository's history every day. On a Mac, for the fonts the images are drawn
+# in, and with the runner's Google Chrome.
+#
+# A push from a workflow doesn't start another, so nothing would deploy the
+# new images: this starts CI itself, which deploys once everything passes.
+name: Redraw preview images
+
+on:
+  schedule:
+    - cron: "17 10 * * 1" # Mondays, 10:17 UTC, an hour after the day's snapshots are refreshed
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write # to start CI
+
+jobs:
+  redraw:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run og
+
+      - name: Commit if changed, and deploy
+        run: |
+          if git diff --quiet -- public/; then
+            echo "No changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/og.png public/og-talks.png public/og-resume.png
+          git commit -m "Redraw preview images"
+          git push
+          gh workflow run ci.yml --ref main
+        env:
+          GH_TOKEN: ${{ github.token }}
