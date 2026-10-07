@@ -1317,8 +1317,14 @@ export function createApp({
         return send(200, TYPES[path.extname(pathname) || ".plan"], file.body, {
           ...(file.modified && { "last-modified": file.modified.toUTCString() }),
           // Scripts and styles are checked on every load, like the pages, so a
-          // new version never runs with an old one.
-          "cache-control": /\.(?:js|css)$/.test(pathname) ? "no-cache" : "public, max-age=300",
+          // new version never runs with an old one. Images and figlet's font
+          // rarely change: they're kept for a day, and for a week after that
+          // can be shown while a newer one is fetched.
+          "cache-control": /\.(?:js|css)$/.test(pathname)
+            ? "no-cache"
+            : /\.(?:svg|png|webp|flf)$/.test(pathname)
+              ? "public, max-age=86400, stale-while-revalidate=604800"
+              : "public, max-age=300",
         });
       }
     }

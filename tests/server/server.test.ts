@@ -508,7 +508,8 @@ describe("offline (snapshots from data/)", () => {
     assert.match((await app.get("/.plan")).type, /^text\/plain/);
     const comic = await app.get("/img/dependency.webp");
     assert.match(comic.type, /^image\/webp/);
-    assert.equal(comic.headers.get("cache-control"), "public, max-age=300");
+    assert.equal(comic.headers.get("cache-control"), "public, max-age=86400, stale-while-revalidate=604800"); // it rarely changes
+    assert.equal((await app.get("/robots.txt")).headers.get("cache-control"), "public, max-age=300");
     assert.match((await app.get("/og.png")).type, /^image\/png/);
     assert.match((await app.get("/share/standard.flf")).body, /^flf2a/);
     assert.match((await app.get("/robots.txt")).body, /User-agent/);

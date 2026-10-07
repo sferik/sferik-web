@@ -655,6 +655,22 @@ test.describe("offline", () => {
     await expect(page.locator(".repl-log")).toContainText("I've spent nearly two decades");
   });
 
+  test("answers with what it kept when the network takes too long", async ({ page, context }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/");
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.reload(); // now the service worker answers
+    await run(page, "curl sferik.net/podcasts");
+    await expect(page.locator(".repl-log")).toContainText("Ruby Rogues");
+    // A network that never answers, nor fails.
+    let asked = 0;
+    await context.route("**/podcasts", () => void asked++);
+    await run(page, "clear");
+    await run(page, "curl sferik.net/podcasts");
+    await expect(page.locator(".repl-log")).toContainText("Ruby Rogues");
+    expect(asked).toBe(1);
+  });
+
   test("without the service worker, the site still works", async ({ page, context }) => {
     await context.route("**/sw.js", (route) => route.abort());
     const errors: string[] = [];
