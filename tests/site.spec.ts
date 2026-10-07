@@ -134,6 +134,8 @@ test.describe("themes", () => {
   test("d from the phosphor theme goes to dark", async ({ page }) => {
     await page.goto("/");
     await run(page, "matrix");
+    // Once matrix has run: d pressed any sooner would set the theme first, and matrix after it.
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "phosphor");
     await shell(page).blur();
     await page.keyboard.press("d");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");

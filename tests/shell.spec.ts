@@ -139,8 +139,11 @@ test.describe("history", () => {
     const other = await context.newPage();
     await other.goto("/");
     await sh(other, "echo from the other tab");
-    await field(page).press("ArrowUp");
-    await expect(field(page)).toHaveValue("echo from the other tab");
+    // The other tab's history arrives in its own time, so ask until it's here.
+    await expect(async () => {
+      await field(page).press("ArrowUp");
+      await expect(field(page)).toHaveValue("echo from the other tab", { timeout: 250 });
+    }).toPass();
     // Other storage, and history that isn't history, leave it be.
     await other.evaluate(() => localStorage.setItem("something-else", "x"));
     await other.evaluate(() => localStorage.setItem("history", "not json"));
