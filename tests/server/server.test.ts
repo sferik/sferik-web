@@ -391,6 +391,23 @@ describe("offline (snapshots from data/)", () => {
     assert.match((await app.get("/", { accept: HTML })).body, /<pre>╭─+╮\n│ Erik Berlin +│[^]*sferik@mbp ~&gt; whoami\nI've spent nearly two decades/);
   });
 
+  test("a page builds each resource once, for its JSON and its text alike", async () => {
+    const files = nodeFiles(ROOT);
+    const read: string[] = [];
+    const data = (name: string) => (read.push(name), files.data(name));
+    const app = await serve({ offline: true, files: { ...files, data } });
+    const reads = async (url: string, accept: string, name: string) => {
+      read.length = 0;
+      await app.get(url, { accept });
+      return read.filter((file) => file === name).length;
+    };
+    assert.equal(await reads("/", HTML, "contributions"), 1);
+    assert.equal(await reads("/", "text/plain", "contributions"), 1);
+    assert.equal(await reads("/resume", HTML, "resume"), 1);
+    assert.equal(await reads("/talks", HTML, "talks"), 2); // and once more for its JSON-LD
+    await app.close();
+  });
+
   test("the home page says who it's about, as a schema.org Person with every profile", async () => {
     const { body } = await app.get("/", { accept: HTML });
     const person = JSON.parse(/<script type="application\/ld\+json">(.*?)<\/script>\n {2}<\/head>/s.exec(body)![1]);

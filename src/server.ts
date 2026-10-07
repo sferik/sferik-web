@@ -455,8 +455,10 @@ function createModules({ live, read }: { live: Live; read: Read }) {
     };
   }
 
-  async function homeText() {
-    const data = await home();
+  // The home page as text. Given what a page has already built (each
+  // resource's JSON, by URL), it's rendered from that, not built again.
+  async function homeText(built: Record<string, unknown> = {}) {
+    const data = (built["/"] as Home | undefined) ?? (await home());
     const inner = WIDTH - 4;
     const line = (s: string) => `│ ${s.padEnd(inner)} │`;
     const box = [
@@ -469,7 +471,7 @@ function createModules({ live, read }: { live: Live; read: Read }) {
     ];
     const parts = await Promise.all(
       HOME.map(async (id) => {
-        const m = await modules[id]();
+        const m = (built[`/${id}`] as Modules[ModuleId] | undefined) ?? (await modules[id]());
         const command = id === "talks" ? "ls -t ~/talks | head -6" : m.command;
         return `${PROMPT}${command}\n${id === "talks" ? text.talks(m as Talks, 6) : (text[id] as (m: unknown) => string)(m)}`;
       }),
@@ -1213,12 +1215,13 @@ export function createApp({
   const site = createModules({ live: createLive({ fetch, offline, now, timeout, token, store, refresh }), read });
   const figletFont = async () => (font ??= parseFont(new TextDecoder().decode(await asset("share/standard.flf"))));
 
-  // Representations of each resource: [json, text].
   // Each resource's representations beyond html. Only the resume has LaTeX and
-  // PDF, and only finger a contact card.
+  // PDF, and only finger a contact card. A page that has built its resources'
+  // JSON (see embedded) hands it to text, by URL, so it isn't built twice.
+  type Built = Record<string, unknown>;
   interface Resource {
     json: () => Promise<unknown>;
-    text: () => Promise<string>;
+    text: (built?: Built) => Promise<string>;
     latex?: () => Promise<string>;
     pdf?: () => Promise<Buffer>;
     vcard?: () => Promise<string>;
@@ -1228,14 +1231,14 @@ export function createApp({
     "/": { json: site.home, text: site.homeText },
     "/resume": {
       json: site.resume,
-      text: async () => manPage(await site.resume(), new Date(now())),
+      text: async (built) => manPage((built?.["/resume"] as Resume | undefined) ?? (await site.resume()), new Date(now())),
       latex: async () => latexResume(await site.resume()),
       pdf: async () => pdfResume(await site.resume(), new Date(now())),
     },
   };
   for (const id of Object.keys(site.modules) as ModuleId[]) {
     const render = site.text[id] as (m: unknown) => string;
-    resources[`/${id}`] = { json: site.modules[id], text: async () => render(await site.modules[id]()) };
+    resources[`/${id}`] = { json: site.modules[id], text: async (built) => render(built?.[`/${id}`] ?? (await site.modules[id]())) };
   }
   resources["/index"] = resources["/"];
   resources["/finger"].vcard = async () => vcard(await site.modules.finger());
@@ -1252,11 +1255,11 @@ export function createApp({
   // The JSON a page builds itself from, by URL, in the page itself: what it
   // would otherwise ask for as soon as it loaded (eight requests, for the home
   // page). site.ts's getJSON looks here first.
-  async function embedded(file: string): Promise<string> {
+  async function build(file: string): Promise<Built> {
     const urls = file === "index.html" ? ["/", ...(await site.home()).modules.map((m) => m.url)] : [`/${file.replace(".html", "")}`];
-    const data = Object.fromEntries(await Promise.all(urls.map(async (url) => [url, await resources[url].json()] as const)));
-    return `<script type="application/json" id="data">${JSON.stringify(data).replace(/</g, "\\u003c")}</script>`;
+    return Object.fromEntries(await Promise.all(urls.map(async (url) => [url, await resources[url].json()] as const)));
   }
+  const embedded = (built: Built) => `<script type="application/json" id="data">${JSON.stringify(built).replace(/</g, "\\u003c")}</script>`;
 
   async function handle(req: IncomingMessage, res: ServerResponse) {
     // A successful response gets an ETag; asking again with it (If-None-Match)
@@ -1397,11 +1400,12 @@ export function createApp({
         }
         if (file === "talks.html") page = page.replace("</head>", `  ${talksJsonLd((await site.modules.talks()) as Talks)}\n  </head>`);
         // Every page gets the JSON it builds itself from, so it needn't ask for it.
-        const data = await embedded(file);
+        const built = await build(file);
+        const data = embedded(built);
         page = page.replace("</body>", () => `  ${data}\n  </body>`);
         // And, for a reader that doesn't run scripts (a crawler, a link preview,
-        // a text browser), the page as text: what curl gets.
-        const text = await resources[file === "index.html" ? "/" : `/${file.replace(".html", "")}`].text();
+        // a text browser), the page as text: what curl gets, from what was just built.
+        const text = await resources[file === "index.html" ? "/" : `/${file.replace(".html", "")}`].text(built);
         page = page.replace(/<\/noscript\s*>/, () => `<pre>${xml(text.trimEnd())}</pre></noscript>`);
         return send(200, CONTENT_TYPE.html, page, { vary: "Accept", "cache-control": "no-cache" });
       }

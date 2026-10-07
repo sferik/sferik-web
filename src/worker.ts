@@ -11,6 +11,8 @@
  *   rations       rate limits by address, on check-ins and write's messages
  *   the API       kept in the cache at each Cloudflare location, for as long
  *                 as each response says it's good for
+ *   the pages     kept there too, for a minute, though browsers still check
+ *                 for a new one on every load
  *   write         emailed, through Email Routing
  *
  * Deploy with `bun run deploy`; see the README for the one-time setup.
@@ -161,10 +163,34 @@ const LIVE_PATHS = ["/contributions", "/src"];
 // resource's JSON, text, and the like say changes only when the live data is
 // refreshed, and they say how long they're good for (Cache-Control: public,
 // max-age), so for that long they're kept here, and answered without reading
-// KV or building them again. Pages aren't (no-cache), nor who's on (no-store).
+// KV or building them again. Who's on isn't (no-store).
+//
+// A page tells browsers to check for a new one on every load (no-cache), and
+// building one is the most work the Worker does: every resource it shows, as
+// JSON and as text. So a page is kept as well, for a minute, under a
+// Cache-Control the cache will take, with the page's own beside it, which is
+// put back before it's sent. A deploy starts a new set of entries (the commit
+// is in each one's key), so a page from before it never loads scripts from after.
 interface EdgeCache {
   match(request: Request): Promise<Response | undefined>;
   put(request: Request, response: Response): Promise<void>;
+}
+const PAGES_FOR = 60; // seconds
+const OWN = "x-own-cache-control";
+const isPage = (response: Response) => response.headers.get("cache-control") === "no-cache" && /^text\/html\b/.test(response.headers.get("content-type")!);
+function toKeep(response: Response): Response {
+  const copy = new Response(response.body, response);
+  copy.headers.set(OWN, "no-cache");
+  copy.headers.set("cache-control", `public, max-age=${PAGES_FOR}`);
+  return copy;
+}
+function toSend(kept: Response): Response {
+  const own = kept.headers.get(OWN);
+  if (!own) return kept;
+  const response = new Response(kept.body, kept);
+  response.headers.set("cache-control", own);
+  response.headers.delete(OWN);
+  return response;
 }
 const edge = () => (globalThis as { caches?: { default?: EdgeCache } }).caches?.default;
 export interface Context {
@@ -178,10 +204,10 @@ export default {
     // 304 Not Modified itself.
     const cache = request.method === "GET" ? edge() : undefined;
     const url = new URL(request.url);
-    const key = `${url.origin}${url.pathname}?${new URLSearchParams({ search: url.search, accept: request.headers.get("accept") ?? "" })}`;
+    const key = `${url.origin}${url.pathname}?${new URLSearchParams({ search: url.search, accept: request.headers.get("accept") ?? "", commit: env.COMMIT ?? "" })}`;
     const tag = request.headers.get("if-none-match");
     const kept = await cache?.match(new Request(key, { headers: tag ? { "if-none-match": tag } : {} }));
-    if (kept) return kept;
+    if (kept) return toSend(kept);
     const app = createApp({
       files: files(env),
       store: kvStore(env.LIVE),
@@ -192,8 +218,10 @@ export default {
       mail: mailer(env),
     });
     const response = await serve(app, request);
-    if (cache && response.status === 200 && /^public, max-age=[1-9]/.test(response.headers.get("cache-control") ?? ""))
-      ctx.waitUntil(cache.put(new Request(key), response.clone()));
+    if (cache && response.status === 200) {
+      if (isPage(response)) ctx.waitUntil(cache.put(new Request(key), toKeep(response.clone())));
+      else if (/^public, max-age=[1-9]/.test(response.headers.get("cache-control") ?? "")) ctx.waitUntil(cache.put(new Request(key), response.clone()));
+    }
     return response;
   },
 

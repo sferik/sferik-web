@@ -282,10 +282,11 @@ describe("the Worker", () => {
     // If-None-Match goes to the cache, which answers it.
     await worker.fetch(new Request("https://sferik.net/whoami", { headers: { accept: "application/json", "if-none-match": '"abc"' } }), e, CTX);
     assert.equal(asked.at(-1), '"abc"');
-    // Not kept: pages, who's on, what wasn't found, what doesn't say, and what a POST says.
+    // Not kept: who's on, what wasn't found, what doesn't say, what says to check every time
+    // (but for a page), and what a POST says.
     for (const [url, accept] of [
-      ["/", "text/html"],
       ["/who", "application/json"],
+      ["/version", "application/json"],
       ["/nope", "application/json"],
       ["/.signature", "text/plain"], // which doesn't say how long it's good for
     ])
@@ -293,6 +294,50 @@ describe("the Worker", () => {
     await post(e, "/who?token=0123456789abcdef&page=/");
     await Promise.all(waiting);
     assert.equal(kept.size, 3);
+  });
+
+  test("keeps a page in Cloudflare's cache for a minute, though it tells browsers to check every time, until the next deploy", async (t) => {
+    const kept = new Map<string, Response>();
+    const cache = {
+      // Asked with If-None-Match, the cache answers 304 Not Modified, with the headers it kept.
+      match: async (request: Request) => {
+        const found = kept.get(request.url)?.clone();
+        return found && request.headers.has("if-none-match") ? new Response(null, { status: 304, headers: found.headers }) : found;
+      },
+      put: async (request: Request, response: Response) => void kept.set(request.url, response),
+    };
+    const global = globalThis as { caches?: unknown };
+    const before = global.caches;
+    global.caches = { default: cache };
+    t.after(() => void (global.caches = before));
+
+    const e = env();
+    e.COMMIT = "abc1234";
+    const first = await get(e, "/", "text/html");
+    assert.equal(first.headers.get("cache-control"), "no-cache");
+    const page = await first.text();
+    await Promise.all(waiting);
+    assert.deepEqual(
+      [...kept.values()].map((response) => response.headers.get("cache-control")),
+      ["public, max-age=60"],
+    );
+    // The same again comes from the cache, without being built, and says what the first did.
+    const assets = e.ASSETS.fetch;
+    let built = 0;
+    e.ASSETS.fetch = (request) => (built++, assets(request));
+    const second = await get(e, "/", "text/html");
+    assert.deepEqual([second.headers.get("cache-control"), second.headers.get("x-own-cache-control"), await second.text()], ["no-cache", null, page]);
+    const unchanged = await worker.fetch(
+      new Request("https://sferik.net/", { headers: { accept: "text/html", "if-none-match": first.headers.get("etag")! } }),
+      e,
+      CTX,
+    );
+    assert.deepEqual([unchanged.status, unchanged.headers.get("cache-control")], [304, "no-cache"]);
+    // A deploy leaves what was kept behind.
+    assert.equal(built, 0);
+    e.COMMIT = "def5678";
+    assert.equal(await (await get(e, "/", "text/html")).text(), page);
+    assert.notEqual(built, 0);
   });
 
   test("takes write's Idempotency-Key, so a message sent again isn't emailed twice, unless it didn't go through", async (t) => {
