@@ -56,10 +56,13 @@ const kindOf = (request: Request) => {
   const first = accept.split(/[,;]/)[0].trim();
   return ["", "*/*", "text/*", "text/plain"].includes(first) ? "other" : first;
 };
+// A script or a style is asked for under the commit that's deployed
+// (/v/<commit>/site.js), and kept without it: there's one of each, the
+// latest, which is the one the latest page kept asks for.
 const key = (request: Request) => {
   const kind = kindOf(request);
   const url = new URL(request.url);
-  return `${url.origin}${url.pathname}?as=${kind}`;
+  return `${url.origin}${url.pathname.replace(/^\/v\/\w+(?=\/)/, "")}?as=${kind}`;
 };
 // Every response, or none: with a page missing, or an error in place of one, it's better to try again on the next visit.
 const good = (response: Response) => {

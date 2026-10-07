@@ -11,6 +11,7 @@
  *   rations       rate limits by address, on check-ins and write's messages
  *   the API       kept in the cache at each Cloudflare location, for as long
  *                 as each response says it's good for
+ *   the scripts   a deploy's own, at /v/<commit>/, kept there too
  *   the pages     kept there too, for a minute, though browsers still check
  *                 for a new one on every load
  *   write         emailed, through Email Routing
@@ -20,7 +21,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { EmailMessage } from "cloudflare:email";
 import { DurableObject } from "cloudflare:workers";
-import { createApp, createHost, letter, type Files, type Host, type HostStorage, type Letter, type Limit, type Store } from "./server.ts";
+import { asksFor, createApp, createHost, letter, type Files, type Host, type HostStorage, type Letter, type Limit, type Store } from "./server.ts";
 import type { Page } from "./types.js";
 import contributions from "../data/contributions.json" with { type: "json" };
 import dependency from "../data/dependency.json" with { type: "json" };
@@ -172,9 +173,16 @@ const LIVE_PATHS = ["/contributions", "/src"];
 // A page tells browsers to check for a new one on every load (no-cache), and
 // building one is the most work the Worker does: every resource it shows, as
 // JSON and as text. So a page is kept as well, for a minute, under a
-// Cache-Control the cache will take, with the page's own beside it, which is
-// put back before it's sent. A deploy starts a new set of entries (the commit
-// is in each one's key), so a page from before it never loads scripts from after.
+// Cache-Control the cache will take. A deploy starts a new set of entries (the
+// commit is in each one's key), so a page from before it never loads scripts
+// from after.
+//
+// What's kept has its own Cache-Control beside it, which is put back before
+// it's sent. For a page that's the no-cache the cache wouldn't take. For the
+// rest it's the one they were kept under, which the cache doesn't hand back
+// as it was: Cloudflare gives what it answers the zone's Browser Cache TTL
+// (four hours, unless it's set to respect the headers there are), so who's on,
+// good for five seconds, told whoever asked to keep it for four hours.
 interface EdgeCache {
   match(request: Request): Promise<Response | undefined>;
   put(request: Request, response: Response): Promise<void>;
@@ -184,18 +192,21 @@ const OWN = "x-own-cache-control";
 const isPage = (response: Response) => response.headers.get("cache-control") === "no-cache" && /^text\/html\b/.test(response.headers.get("content-type")!);
 function toKeep(response: Response): Response {
   const copy = new Response(response.body, response);
-  copy.headers.set(OWN, "no-cache");
-  copy.headers.set("cache-control", `public, max-age=${PAGES_FOR}`);
+  copy.headers.set(OWN, response.headers.get("cache-control")!);
+  if (isPage(response)) copy.headers.set("cache-control", `public, max-age=${PAGES_FOR}`);
   return copy;
 }
 function toSend(kept: Response): Response {
-  const own = kept.headers.get(OWN);
-  if (!own) return kept;
   const response = new Response(kept.body, kept);
-  response.headers.set("cache-control", own);
+  response.headers.set("cache-control", kept.headers.get(OWN)!);
   response.headers.delete(OWN);
   return response;
 }
+// A query that changes nothing isn't another entry: /whoami?x=1 is /whoami,
+// and without this each one made up would be built anew. Only WebFinger reads
+// its query (the account asked about), and it's not at the top, like the
+// resources are, so only a path that is has its query left out.
+const TOP = /^\/[\w.-]*$/;
 const edge = () => (globalThis as { caches?: { default?: EdgeCache } }).caches?.default;
 export interface Context {
   waitUntil(promise: Promise<unknown>): void;
@@ -203,12 +214,13 @@ export interface Context {
 
 export default {
   async fetch(request: Request, env: Env, ctx: Context): Promise<Response> {
-    // One entry for each way of asking: the same URL is JSON to one Accept
-    // header and text to another. Asked with If-None-Match, the cache answers
-    // 304 Not Modified itself.
+    // One entry for each thing asked for: the same URL is JSON to one Accept
+    // header and text to another, but the same to every one that wants the
+    // same formats as much (asksFor), as each browser's does for a page. Asked
+    // with If-None-Match, the cache answers 304 Not Modified itself.
     const cache = request.method === "GET" ? edge() : undefined;
     const url = new URL(request.url);
-    const key = `${url.origin}${url.pathname}?${new URLSearchParams({ search: url.search, accept: request.headers.get("accept") ?? "", commit: env.COMMIT ?? "" })}`;
+    const key = `${url.origin}${url.pathname}?${new URLSearchParams({ search: TOP.test(url.pathname) ? "" : url.search, accept: asksFor(request.headers.get("accept") ?? undefined), commit: env.COMMIT ?? "" })}`;
     const tag = request.headers.get("if-none-match");
     const kept = await cache?.match(new Request(key, { headers: tag ? { "if-none-match": tag } : {} }));
     if (kept) return toSend(kept);
@@ -222,10 +234,8 @@ export default {
       mail: mailer(env),
     });
     const response = await serve(app, request);
-    if (cache && response.status === 200) {
-      if (isPage(response)) ctx.waitUntil(cache.put(new Request(key), toKeep(response.clone())));
-      else if (/^public, max-age=[1-9]/.test(response.headers.get("cache-control") ?? "")) ctx.waitUntil(cache.put(new Request(key), response.clone()));
-    }
+    if (cache && response.status === 200 && (isPage(response) || /^public, max-age=[1-9]/.test(response.headers.get("cache-control") ?? "")))
+      ctx.waitUntil(cache.put(new Request(key), toKeep(response.clone())));
     return response;
   },
 

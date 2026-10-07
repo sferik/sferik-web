@@ -15,6 +15,7 @@ import {
   createHost,
   letter,
   memoryStorage,
+  asksFor,
   negotiate,
   nodeFiles,
   shade,
@@ -126,6 +127,17 @@ function fakeNet(overrides: Record<string, Fixture> = {}) {
 }
 
 // ------------------------------------------------------------ negotiation
+
+describe("asksFor", () => {
+  test("is the same for every Accept header that wants the same formats as much", () => {
+    const chrome = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7";
+    assert.equal(asksFor(chrome), asksFor(HTML));
+    assert.equal(asksFor(undefined), asksFor("*/*"));
+    assert.equal(asksFor("Application/JSON"), asksFor("application/json;q=1"));
+    assert.notEqual(asksFor("application/json"), asksFor("text/plain"));
+    assert.notEqual(asksFor("application/pdf"), asksFor("application/pdf, text/plain;q=0.5"));
+  });
+});
 
 describe("negotiate", () => {
   test("browsers get html, API clients json, curl text", () => {
@@ -668,9 +680,49 @@ describe("offline (snapshots from data/)", () => {
     const options = await app.get("/resume", { method: "OPTIONS" });
     assert.equal(options.status, 204);
     assert.equal(options.headers.get("access-control-allow-origin"), "*");
+    assert.equal(options.headers.get("access-control-allow-headers"), "accept, if-none-match");
+    // A page on another origin may read the ETag, and how long to wait.
+    assert.equal(head.headers.get("access-control-expose-headers"), "ETag, Retry-After");
     const post = await app.get("/resume", { method: "POST" });
     assert.equal(post.status, 405);
     assert.equal(post.headers.get("allow"), "GET, HEAD, OPTIONS");
+  });
+});
+
+describe("a deploy's scripts and style", () => {
+  const COMMIT = "6cc43d0aa1b2";
+  const FOREVER = "public, max-age=31536000, immutable";
+
+  test("are at the commit's URLs, which a page asks for, and are never checked again", async () => {
+    const deployed = await serve({ offline: true, version: { commit: COMMIT } });
+    for (const url of ["/", "/talks", "/resume", "/nope"]) {
+      const page = (await deployed.get(url, { accept: HTML })).body;
+      assert.ok(page.includes(`<link rel="stylesheet" href="/v/${COMMIT}/site.css" />`), url);
+      assert.ok(page.includes(`<script type="module" src="/v/${COMMIT}/site.js"></script>`), url);
+      assert.ok(page.includes(`<link rel="modulepreload" href="/v/${COMMIT}/dom.js" />`), url);
+      // Nothing else moves: the icon, the feed, the API's description.
+      assert.ok(!page.includes(`/v/${COMMIT}/favicon.svg`) && page.includes('href="/favicon.svg"'), url);
+    }
+    const css = await deployed.get(`/v/${COMMIT}/site.css`);
+    assert.deepEqual([css.status, css.type, css.headers.get("cache-control")], [200, "text/css; charset=utf-8", FOREVER]);
+    assert.equal(css.body, (await deployed.get("/site.css")).body);
+    // At its own URL, and under a commit that isn't the one deployed, it's checked every time.
+    assert.equal((await deployed.get("/site.css")).headers.get("cache-control"), "no-cache");
+    assert.equal((await deployed.get("/v/0123abc/site.css")).headers.get("cache-control"), "no-cache");
+    // Only scripts and styles are there.
+    for (const url of [`/v/${COMMIT}/nope.css`, `/v/${COMMIT}/favicon.svg`, `/v/${COMMIT}/index.html`, `/v/${COMMIT}`]) {
+      assert.equal((await deployed.get(url)).status, 404, url);
+    }
+    await deployed.close();
+  });
+
+  test("with no commit, stay where they are, and are checked on every load", async () => {
+    const local = await serve({ offline: true });
+    const page = (await local.get("/", { accept: HTML })).body;
+    assert.ok(page.includes('<link rel="stylesheet" href="/site.css" />'));
+    assert.ok(page.includes('<script type="module" src="/site.js"></script>'));
+    assert.equal((await local.get("/v/undefined/site.css")).headers.get("cache-control"), "no-cache");
+    await local.close();
   });
 });
 
@@ -933,6 +985,21 @@ describe("live data", () => {
     const net = fakeNet({ "https://api.github.com/users/sferik/events/public?per_page=30": [{ type: "WatchEvent", repo: { name: "a/b" } }] });
     const app = await serve({ fetch: net.fetch });
     assert.equal(JSON.parse((await app.get("/contributions", { accept: JSON_ })).body).lastPush, null);
+    await app.close();
+  });
+
+  test("keeps the last push when the latest events have none", async () => {
+    let clock = 0;
+    let events: object[] = [{ type: "PushEvent", repo: { name: "sferik/x-ruby" }, payload: { head: "abc1234def5678" }, created_at: "2026-10-01T12:00:00Z" }];
+    const net = fakeNet({ "https://api.github.com/users/sferik/events/public?per_page=30": () => Promise.resolve(Response.json(events)) });
+    const app = await serve({ fetch: net.fetch, now: () => clock });
+    const push = async () => JSON.parse((await app.get("/contributions", { accept: JSON_ })).body).lastPush;
+    assert.equal((await push()).sha, "abc1234def5678");
+    events = [{ type: "WatchEvent", repo: { name: "a/b" } }];
+    clock += 3600e3;
+    await push(); // stale, while it refreshes in the background
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal((await push()).sha, "abc1234def5678");
     await app.close();
   });
 

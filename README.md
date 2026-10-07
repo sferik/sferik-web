@@ -184,7 +184,8 @@ with these differences: `data/*.json` is bundled into the Worker, `public/` is s
 straight from them, without running the Worker, with the headers in `public/_headers`), and the live numbers live in KV,
 refreshed every 15 minutes by a cron trigger, so a request never waits on RubyGems or GitHub. What the API answers is kept in Cloudflare's cache
 for as long as each response says it's good for (a minute, for most), and so is each page, for a minute, though browsers still check for a new one
-on every load. Until the first refresh, pages show the snapshots.
+on every load. A page asks for its scripts and style under the commit that's deployed (`/v/<commit>/site.js`), where they never change, so a browser
+keeps them until the next deploy without checking. Until the first refresh, pages show the snapshots.
 Who's logged in lives in one Durable Object, `mbp`, so every tab sees the same list; and `write` sends email through Email Routing, which can only
 deliver to an address it has verified (the one in `wrangler.jsonc`).
 

@@ -254,10 +254,16 @@ describe("the Worker", () => {
     // The cache, as the runtime has it: caches.default. It answers If-None-Match itself.
     const kept = new Map<string, Response>();
     const asked: (string | null)[] = [];
+    // What it hands back says to keep it for four hours, whatever it said when
+    // it was kept: Cloudflare's Browser Cache TTL, as the zone has it.
     const cache = {
       async match(request: Request) {
         asked.push(request.headers.get("if-none-match"));
-        return kept.get(request.url)?.clone();
+        const found = kept.get(request.url)?.clone();
+        if (!found) return undefined;
+        const handed = new Response(found.body, found);
+        handed.headers.set("cache-control", "public, max-age=14400");
+        return handed;
       },
       put: async (request: Request, response: Response) => void kept.set(request.url, response),
     };
@@ -271,24 +277,35 @@ describe("the Worker", () => {
     await Promise.all(waiting);
     assert.equal(kept.size, 1);
     // The same again comes from the cache: KV isn't read, and it doesn't see a change.
+    // It says how long it's good for as the first did, not as the cache does.
     e.LIVE.get = () => Promise.reject(new Error("KV was read"));
-    assert.equal(await (await get(e, "/whoami", "application/json")).text(), first);
-    // Asked for another way, it's another entry; so is another query.
+    const again = await get(e, "/whoami", "application/json");
+    assert.deepEqual([again.headers.get("cache-control"), again.headers.get("x-own-cache-control")], ["public, max-age=60", null]);
+    assert.equal(await again.text(), first);
+    // So does the same asked for in other words, or with a query that changes nothing.
+    assert.equal(await (await get(e, "/whoami", "Application/JSON; q=1")).text(), first);
+    assert.equal(await (await get(e, "/whoami?utm_source=elsewhere", "application/json")).text(), first);
+    await Promise.all(waiting);
+    assert.equal(kept.size, 1);
+    // Asked for another way, it's another entry; so is another query, of what reads its query.
     e.LIVE.get = async () => null;
     assert.match(await (await get(e, "/whoami", "text/plain")).text(), /^I've spent/);
     await get(e, "/.well-known/webfinger?resource=acct:sferik@sferik.net");
+    await get(e, "/.well-known/webfinger?resource=acct:sferik@sferik.com");
     await Promise.all(waiting);
-    assert.equal(kept.size, 3);
+    assert.equal(kept.size, 4);
     // If-None-Match goes to the cache, which answers it.
     await worker.fetch(new Request("https://sferik.net/whoami", { headers: { accept: "application/json", "if-none-match": '"abc"' } }), e, CTX);
     assert.equal(asked.at(-1), '"abc"');
     // Who's on is kept too, for the few seconds it says: the Durable Object isn't asked again.
     assert.equal((await get(e, "/who", "application/json")).headers.get("cache-control"), "public, max-age=5");
     await Promise.all(waiting);
-    assert.equal(kept.size, 4);
+    assert.equal(kept.size, 5);
     const mbp = e.MBP.get;
     e.MBP.get = () => assert.fail("the Durable Object was asked");
-    assert.deepEqual(await (await get(e, "/who", "application/json")).json(), { users: [] });
+    const on = await get(e, "/who", "application/json");
+    assert.equal(on.headers.get("cache-control"), "public, max-age=5"); // and not for four hours
+    assert.deepEqual(await on.json(), { users: [] });
     e.MBP.get = mbp;
     // Not kept: what wasn't found, what doesn't say, what says to check every time (but for a
     // page), and what a POST says.
@@ -300,7 +317,30 @@ describe("the Worker", () => {
       await get(e, url, accept);
     await post(e, "/who?token=0123456789abcdef&page=/");
     await Promise.all(waiting);
-    assert.equal(kept.size, 4);
+    assert.equal(kept.size, 5);
+  });
+
+  test("keeps a deploy's scripts and style in Cloudflare's cache, at the commit's URLs, for good", async (t) => {
+    const kept = new Map<string, Response>();
+    const cache = {
+      match: async (request: Request) => kept.get(request.url)?.clone(),
+      put: async (request: Request, response: Response) => void kept.set(request.url, response),
+    };
+    const global = globalThis as { caches?: unknown };
+    const before = global.caches;
+    global.caches = { default: cache };
+    t.after(() => void (global.caches = before));
+
+    const e = env();
+    e.COMMIT = "abc1234";
+    assert.match(await (await get(e, "/", "text/html")).text(), /<script type="module" src="\/v\/abc1234\/site\.js"><\/script>/);
+    const first = await get(e, "/v/abc1234/site.css", "text/css,*/*;q=0.1");
+    assert.deepEqual([first.status, first.headers.get("cache-control")], [200, "public, max-age=31536000, immutable"]);
+    const css = await first.text();
+    await Promise.all(waiting);
+    e.ASSETS.fetch = () => assert.fail("the assets were read");
+    const second = await get(e, "/v/abc1234/site.css", "text/css,*/*;q=0.1");
+    assert.deepEqual([second.headers.get("cache-control"), await second.text()], ["public, max-age=31536000, immutable", css]);
   });
 
   test("keeps a page in Cloudflare's cache for a minute, though it tells browsers to check every time, until the next deploy", async (t) => {
@@ -343,7 +383,7 @@ describe("the Worker", () => {
     // A deploy leaves what was kept behind.
     assert.equal(built, 0);
     e.COMMIT = "def5678";
-    assert.equal(await (await get(e, "/", "text/html")).text(), page);
+    assert.equal(await (await get(e, "/", "text/html")).text(), page.replaceAll("/v/abc1234/", "/v/def5678/")); // with its own scripts
     assert.notEqual(built, 0);
   });
 

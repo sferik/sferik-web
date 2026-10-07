@@ -11,7 +11,8 @@
   X-Content-Type-Options: nosniff
 
 # Scripts and styles are checked on every load, like the pages, so a new
-# version never runs with an old one.
+# version never runs with an old one. (A deployed page asks for its own under
+# /v/<commit>/, which the Worker serves, to be kept for good.)
 /*.js
   Cache-Control: no-cache
 /*.css

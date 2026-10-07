@@ -18,7 +18,9 @@
   // straight from the assets without running the Worker, with the headers in
   // public/_headers. Each is listed by name, so a path that only looks like
   // one (/typo.png) still reaches the Worker, for its 404; a test checks that
-  // none is missing. A file left off would still be served, by the Worker.
+  // none is missing. A file left off would still be served, by the Worker. So are a deploy's own scripts and
+  // style, at /v/<commit>/, which is where a deployed page asks for them: the Worker says to keep those for good,
+  // and Cloudflare's cache answers for it after the first.
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",

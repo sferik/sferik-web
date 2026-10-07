@@ -654,11 +654,17 @@ test.describe("offline", () => {
     await expect(page.locator(".repl-log")).toContainText("2 packets transmitted");
     await page.goto("/?run=whoami");
     expect(await kept()).toEqual(before);
+    // Nor a copy of a script or a style for each deploy: it's asked for under the commit, and kept without it.
+    const style = (url: string) => page.evaluate(async (path) => (await (await fetch(path)).text()).length, url);
+    const length = await style("/v/0123abc/site.css");
+    expect(await kept()).toEqual(before);
+    expect(before).toContain("/site.css?as=other");
     expect(await page.evaluate(() => caches.keys())).toEqual(["sferik-2"]);
     // A link that runs a command still opens without a network: it's the home page.
     await context.setOffline(true);
     await page.goto("/?run=whoami");
     await expect(page.locator(".repl-log")).toContainText("I've spent nearly two decades");
+    expect(await style("/v/4567def/site.css")).toBe(length); // the next deploy's, which is the one kept
   });
 
   test("keeps a resource's PDF apart from its text, so one isn't answered with the other", async ({ page, context }) => {

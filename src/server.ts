@@ -264,11 +264,15 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh }: Liv
     stars: (repos: string[]) => cached("stars", 6 * HOUR, () => (token ? starred(repos).catch(() => counted(repos)) : counted(repos))),
     contributions: () => cached("contributions", HOUR, () => (token ? calendar().catch(scraped) : scraped())),
     lastPush: () =>
-      cached("push", 5 * 60e3, async (): Promise<Push | null> => {
+      cached("push", 5 * 60e3, async (): Promise<Push> => {
         type Event = { type: string; repo: { name: string }; payload?: { head?: string }; created_at: string };
         const events = await getJSON<Event[]>("https://api.github.com/users/sferik/events/public?per_page=30");
         const ev = events.find((e) => e.type === "PushEvent" && e.payload?.head);
-        return ev ? { repo: ev.repo.name, sha: ev.payload!.head!, at: ev.created_at } : null;
+        // The latest thirty events may have no push among them (a day of
+        // reviews and issues), which doesn't undo the last one: that's a load
+        // that failed, so the push already known is kept.
+        if (!ev) throw new Error("GitHub: no push in the latest events");
+        return { repo: ev.repo.name, sha: ev.payload!.head!, at: ev.created_at };
       }),
   };
 }
@@ -1119,6 +1123,11 @@ const SECURITY_HEADERS = {
   "x-content-type-options": "nosniff",
 };
 
+// The API is for any origin's pages. One of them may read a response's ETag
+// (to ask again with it, in If-None-Match) and how long it's told to wait
+// (Retry-After), which a browser otherwise keeps from a page on another origin.
+const CORS = { "access-control-allow-origin": "*", "access-control-expose-headers": "ETag, Retry-After" };
+
 // An entity tag for a response: FNV-1a over its bytes, and its length. Fast,
 // the same on Node and Workers, and plenty to tell versions of a file apart.
 export function etag(body: string | Uint8Array): string {
@@ -1150,7 +1159,8 @@ const CONTENT_TYPE: Record<Format, string> = {
   pdf: "application/pdf",
   vcard: "text/vcard; charset=utf-8",
 };
-export function negotiate(accept: string | undefined, formats: Format[] = ["html", "json", "text"]): Format | null {
+// How much an Accept header wants each format: 0 for not at all, up to 1.
+function wanted(accept: string | undefined): (format: Format) => number {
   const prefs = (accept || "*/*").split(",").map((part) => {
     const [type, ...params] = part.trim().toLowerCase().split(";");
     const q = params.find((p) => p.trim().startsWith("q="));
@@ -1158,11 +1168,19 @@ export function negotiate(accept: string | undefined, formats: Format[] = ["html
     // A q that's no number (q=high) says nothing, so it's as if it weren't there.
     return { type: type.trim(), q: Number.isNaN(weight) ? 1 : weight };
   });
-  const q = (...types: string[]) => Math.max(0, ...prefs.filter((p) => types.includes(p.type)).map((p) => p.q));
-  const scores = formats.map((f): [Format, number] => [f, q(...MEDIA[f])]);
+  return (format) => Math.max(0, ...prefs.filter((p) => MEDIA[format].includes(p.type)).map((p) => p.q));
+}
+export function negotiate(accept: string | undefined, formats: Format[] = ["html", "json", "text"]): Format | null {
+  const q = wanted(accept);
+  const scores = formats.map((f): [Format, number] => [f, q(f)]);
   const [best, score] = scores.reduce((a, b) => (b[1] > a[1] ? b : a));
   return score > 0 ? best : null;
 }
+// All that an Accept header says, as far as the app can tell: how much it
+// wants each format. Two that say the same here are answered the same, however
+// they're written (every browser's is its own), so a cache can keep one
+// answer for both.
+export const asksFor = (accept: string | undefined): string => (Object.keys(MEDIA) as Format[]).map(wanted(accept)).join(",");
 
 // ------------------------------------------------------------ the app
 
@@ -1182,6 +1200,12 @@ const TYPES: Record<string, string> = {
 // meant to be read). Everything outside public/ stays private.
 const PUBLIC = /^\/(?:[\w-]+\.(?:html|css|js|js\.map|svg|png|txt)|\.plan|img\/[\w-]+\.(?:png|webp)|share\/[\w-]+\.flf)$/;
 const PAGES: Record<string, string> = { "/": "index.html", "/talks": "talks.html", "/resume": "resume.html" };
+// A script or a style under the commit that's deployed: /v/<commit>/site.js.
+// A page asks for its own there (see versioned), and the scripts ask for each
+// other beside themselves, so they're all one version's. What's at such a URL
+// never changes, so it's kept for a year and never checked.
+const VERSIONED = /^\/v\/(\w+)(\/[\w-]+\.(?:css|js|js\.map))$/;
+const LINKED = /(?<=(?:href|src)=")(?=\/[\w-]+\.(?:css|js)")/g;
 
 export interface AppOptions {
   fetch?: typeof globalThis.fetch;
@@ -1246,6 +1270,10 @@ export function createApp({
   const read = files.data as Read;
   const asset = async (name: string) => (await files.asset(name))!.body; // for files that always exist
   const site = createModules({ live: createLive({ fetch, offline, now, timeout, token, store, refresh }), read });
+  // A page's scripts and style, at the deployed commit's URLs. With no commit
+  // (bun start), they stay where they are, and are checked on every load.
+  const prefix = version.commit ? `/v/${version.commit}` : "";
+  const versioned = (page: string) => page.replace(LINKED, prefix);
   const figletFont = async () => (font ??= parseFont(new TextDecoder().decode(await asset("share/standard.flf"))));
 
   // Each resource's representations beyond html. Only the resume has LaTeX and
@@ -1311,9 +1339,13 @@ export function createApp({
       res.writeHead(fresh ? 304 : status, { "content-type": type, ...SECURITY_HEADERS, ...extra, ...encoding, ...(tag && { etag: tag }) });
       res.end(req.method === "HEAD" || fresh ? undefined : gzip ? gzipSync(body) : body);
     };
-    const cors = { "access-control-allow-origin": "*" };
+    const cors = CORS;
     if (req.method === "OPTIONS") {
-      return send(204, "text/plain", "", { ...cors, "access-control-allow-methods": "GET, HEAD, OPTIONS", "access-control-allow-headers": "accept" });
+      return send(204, "text/plain", "", {
+        ...cors,
+        "access-control-allow-methods": "GET, HEAD, OPTIONS",
+        "access-control-allow-headers": "accept, if-none-match",
+      });
     }
     const url = new URL(req.url!, "http://localhost");
     // A path that isn't properly percent-encoded (/%E0%A4%A) can't be decoded: that's the client's mistake.
@@ -1432,7 +1464,7 @@ export function createApp({
       if (format === "html") {
         const file = PAGES[pathname] ?? PAGES["/"];
         // The home page gets its h-card and who it's about, and the talks page its JSON-LD.
-        let page = new TextDecoder().decode(await asset(file));
+        let page = versioned(new TextDecoder().decode(await asset(file)));
         if (file === "index.html") {
           const profile = (await read("profile")) as Profile;
           const person = personJsonLd(profile, await site.resume());
@@ -1465,20 +1497,27 @@ export function createApp({
       return send(200, CONTENT_TYPE[format], body, headers);
     }
 
-    if (PUBLIC.test(pathname)) {
-      const file = await files.asset(pathname.slice(1));
+    // /v/<commit>/site.js is site.js. Under another commit than the one
+    // deployed (a page from before a deploy, asking after it), it's still the
+    // file there is now, but then it's not that URL's for good.
+    const [, commit, name = pathname] = VERSIONED.exec(pathname) ?? [];
+    if (PUBLIC.test(name)) {
+      const file = await files.asset(name.slice(1));
       if (file) {
-        return send(200, TYPES[path.extname(pathname) || ".plan"], file.body, {
+        return send(200, TYPES[path.extname(name) || ".plan"], file.body, {
           ...(file.modified && { "last-modified": file.modified.toUTCString() }),
-          // Scripts and styles are checked on every load, like the pages, so a
-          // new version never runs with an old one. Images and figlet's font
-          // rarely change: they're kept for a day, and for a week after that
-          // can be shown while a newer one is fetched.
-          "cache-control": /\.(?:js|css)$/.test(pathname)
-            ? "no-cache"
-            : /\.(?:svg|png|webp|flf)$/.test(pathname)
-              ? "public, max-age=86400, stale-while-revalidate=604800"
-              : "public, max-age=300",
+          // At their own URLs, scripts and styles are checked on every load,
+          // like the pages, so a new version never runs with an old one.
+          // Images and figlet's font rarely change: they're kept for a day,
+          // and for a week after that can be shown while a newer one is fetched.
+          "cache-control":
+            commit && commit === version.commit
+              ? "public, max-age=31536000, immutable"
+              : /\.(?:js|css)$/.test(name)
+                ? "no-cache"
+                : /\.(?:svg|png|webp|flf)$/.test(name)
+                  ? "public, max-age=86400, stale-while-revalidate=604800"
+                  : "public, max-age=300",
         });
       }
     }
@@ -1487,7 +1526,7 @@ export function createApp({
     const missing = { vary: "Accept", ...cors };
     if (format === "json")
       return send(404, "application/json; charset=utf-8", JSON.stringify({ error: "Not Found", code: "not_found", path: pathname }) + "\n", missing);
-    if (format === "html") return send(404, TYPES[".html"], await asset("404.html"), { vary: "Accept" });
+    if (format === "html") return send(404, TYPES[".html"], versioned(new TextDecoder().decode(await asset("404.html"))), { vary: "Accept" });
     return send(404, "text/plain; charset=utf-8", `cd: The directory '${pathname}' does not exist\n`, missing);
   }
 
@@ -1497,7 +1536,7 @@ export function createApp({
   return (req: IncomingMessage, res: ServerResponse) =>
     handle(req, res).catch((err: unknown) => {
       console.error(err);
-      res.writeHead(500, { "content-type": "text/plain; charset=utf-8", ...SECURITY_HEADERS, "access-control-allow-origin": "*" });
+      res.writeHead(500, { "content-type": "text/plain; charset=utf-8", ...SECURITY_HEADERS, ...CORS });
       res.end("Internal Server Error\n");
     });
 }
