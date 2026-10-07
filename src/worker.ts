@@ -9,6 +9,8 @@
  *                 than waiting on RubyGems and GitHub
  *   who's on      a Durable Object, mbp, so every tab sees the same list
  *   rations       rate limits by address, on check-ins and write's messages
+ *   the API       kept in the cache at each Cloudflare location, for as long
+ *                 as each response says it's good for
  *   write         emailed, through Email Routing
  *
  * Deploy with `bun run deploy`; see the README for the one-time setup.
@@ -144,8 +146,31 @@ export async function serve(app: App, request: Request): Promise<Response> {
 // and the latest push, and /src has downloads (which /whoami uses too) and stars.
 const LIVE_PATHS = ["/contributions", "/src"];
 
+// The cache at each of Cloudflare's locations, where the Worker runs. What a
+// resource's JSON, text, and the like say changes only when the live data is
+// refreshed, and they say how long they're good for (Cache-Control: public,
+// max-age), so for that long they're kept here, and answered without reading
+// KV or building them again. Pages aren't (no-cache), nor who's on (no-store).
+interface EdgeCache {
+  match(request: Request): Promise<Response | undefined>;
+  put(request: Request, response: Response): Promise<void>;
+}
+const edge = () => (globalThis as { caches?: { default?: EdgeCache } }).caches?.default;
+export interface Context {
+  waitUntil(promise: Promise<unknown>): void;
+}
+
 export default {
-  fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: Context): Promise<Response> {
+    // One entry for each way of asking: the same URL is JSON to one Accept
+    // header and text to another. Asked with If-None-Match, the cache answers
+    // 304 Not Modified itself.
+    const cache = request.method === "GET" ? edge() : undefined;
+    const url = new URL(request.url);
+    const key = `${url.origin}${url.pathname}?${new URLSearchParams({ search: url.search, accept: request.headers.get("accept") ?? "" })}`;
+    const tag = request.headers.get("if-none-match");
+    const kept = await cache?.match(new Request(key, { headers: tag ? { "if-none-match": tag } : {} }));
+    if (kept) return kept;
     const app = createApp({
       files: files(env),
       store: kvStore(env.LIVE),
@@ -155,7 +180,10 @@ export default {
       limit: allows(env.CHECK_INS),
       mail: mailer(env),
     });
-    return serve(app, request);
+    const response = await serve(app, request);
+    if (cache && response.status === 200 && /^public, max-age=[1-9]/.test(response.headers.get("cache-control") ?? ""))
+      ctx.waitUntil(cache.put(new Request(key), response.clone()));
+    return response;
   },
 
   // The cron trigger (wrangler.jsonc): fetch every live value and save them.

@@ -46,10 +46,14 @@ function env(): Env & { kv: Map<string, string>; sent: Sent[]; limited: Set<stri
   };
 }
 
+// What the runtime hands each request: here, somewhere to keep what's still to be done.
+const waiting: Promise<unknown>[] = [];
+const CTX = { waitUntil: (promise: Promise<unknown>) => void waiting.push(promise) };
+
 const get = (e: Env, url: string, accept?: string, method = "GET") =>
-  worker.fetch(new Request(`https://sferik.net${url}`, { method, headers: accept ? { accept } : {} }), e);
+  worker.fetch(new Request(`https://sferik.net${url}`, { method, headers: accept ? { accept } : {} }), e, CTX);
 const post = (e: Env, url: string, body?: string, ip = "192.0.2.1", headers: Record<string, string> = {}) =>
-  worker.fetch(new Request(`https://sferik.net${url}`, { method: "POST", body, headers: { "cf-connecting-ip": ip, ...headers } }), e);
+  worker.fetch(new Request(`https://sferik.net${url}`, { method: "POST", body, headers: { "cf-connecting-ip": ip, ...headers } }), e, CTX);
 const json = async (e: Env, url: string) => (await get(e, url, "application/json")).json() as Promise<Record<string, unknown>>;
 
 // RubyGems and GitHub, for the scheduled refresh.
@@ -118,7 +122,7 @@ describe("the Worker", () => {
     const e = env();
     const first = await get(e, "/whoami", "application/json");
     const tag = first.headers.get("etag")!;
-    const again = await worker.fetch(new Request("https://sferik.net/whoami", { headers: { accept: "application/json", "if-none-match": tag } }), e);
+    const again = await worker.fetch(new Request("https://sferik.net/whoami", { headers: { accept: "application/json", "if-none-match": tag } }), e, CTX);
     assert.equal(again.status, 304);
     assert.equal(await again.text(), "");
   });
@@ -210,7 +214,7 @@ describe("the Worker", () => {
       headers: { "cf-connecting-ip": "192.0.2.1" },
       duplex: "half",
     } as RequestInit);
-    const res = await worker.fetch(request, e);
+    const res = await worker.fetch(request, e, CTX);
     assert.deepEqual([res.status, chunks.length, e.sent.length], [413, 0, 0]);
     // In pieces, a message is still one message.
     const pieces = new ReadableStream<Uint8Array>({
@@ -225,8 +229,53 @@ describe("the Worker", () => {
       headers: { "cf-connecting-ip": "192.0.2.1" },
       duplex: "half",
     } as RequestInit);
-    assert.equal((await worker.fetch(sent, e)).status, 202);
+    assert.equal((await worker.fetch(sent, e, CTX)).status, 202);
     assert.match(Buffer.from(e.sent[0].raw.split("\r\n\r\n")[1], "base64").toString(), /^Hello, in two pieces\n/);
+  });
+
+  test("keeps what the API says in Cloudflare's cache, by URL and Accept, for as long as it's good for", async (t) => {
+    // The cache, as the runtime has it: caches.default. It answers If-None-Match itself.
+    const kept = new Map<string, Response>();
+    const asked: (string | null)[] = [];
+    const cache = {
+      async match(request: Request) {
+        asked.push(request.headers.get("if-none-match"));
+        return kept.get(request.url)?.clone();
+      },
+      put: async (request: Request, response: Response) => void kept.set(request.url, response),
+    };
+    const global = globalThis as { caches?: unknown };
+    const before = global.caches;
+    global.caches = { default: cache };
+    t.after(() => void (global.caches = before));
+
+    const e = env();
+    const first = await (await get(e, "/whoami", "application/json")).text();
+    await Promise.all(waiting);
+    assert.equal(kept.size, 1);
+    // The same again comes from the cache: KV isn't read, and it doesn't see a change.
+    e.LIVE.get = () => Promise.reject(new Error("KV was read"));
+    assert.equal(await (await get(e, "/whoami", "application/json")).text(), first);
+    // Asked for another way, it's another entry; so is another query.
+    e.LIVE.get = async () => null;
+    assert.match(await (await get(e, "/whoami", "text/plain")).text(), /^I've spent/);
+    await get(e, "/.well-known/webfinger?resource=acct:sferik@sferik.net");
+    await Promise.all(waiting);
+    assert.equal(kept.size, 3);
+    // If-None-Match goes to the cache, which answers it.
+    await worker.fetch(new Request("https://sferik.net/whoami", { headers: { accept: "application/json", "if-none-match": '"abc"' } }), e, CTX);
+    assert.equal(asked.at(-1), '"abc"');
+    // Not kept: pages, who's on, what wasn't found, what doesn't say, and what a POST says.
+    for (const [url, accept] of [
+      ["/", "text/html"],
+      ["/who", "application/json"],
+      ["/nope", "application/json"],
+      ["/.signature", "text/plain"], // which doesn't say how long it's good for
+    ])
+      await get(e, url, accept);
+    await post(e, "/who?token=0123456789abcdef&page=/");
+    await Promise.all(waiting);
+    assert.equal(kept.size, 3);
   });
 
   test("takes write's Idempotency-Key, so a message sent again isn't emailed twice, unless it didn't go through", async (t) => {

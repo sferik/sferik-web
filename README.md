@@ -181,7 +181,8 @@ plus three small additions (`basics.formerName`, `patents`, and `speaking`).
 The site runs on [Cloudflare Workers](https://workers.cloudflare.com), free at this traffic. `src/worker.ts` wraps the same app the Node server runs,
 with these differences: `data/*.json` is bundled into the Worker, `public/` is served from Workers static assets (scripts, styles, and images
 straight from them, without running the Worker, with the headers in `public/_headers`), and the live numbers live in KV,
-refreshed every 15 minutes by a cron trigger, so a request never waits on RubyGems or GitHub. Until the first refresh, pages show the snapshots.
+refreshed every 15 minutes by a cron trigger, so a request never waits on RubyGems or GitHub. What the API answers is kept in Cloudflare's cache
+for as long as each response says it's good for (a minute, for most). Until the first refresh, pages show the snapshots.
 Who's logged in lives in one Durable Object, `mbp`, so every tab sees the same list; and `write` sends email through Email Routing, which can only
 deliver to an address it has verified (the one in `wrangler.jsonc`).
 
