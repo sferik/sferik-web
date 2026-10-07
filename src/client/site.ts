@@ -65,14 +65,15 @@ if (login) {
 // ---------------------------------------------------------------- clock
 const clock = $("[data-clock]");
 if (clock) {
+  // It shows the minute, so it changes on the minute: once, not sixty times.
   const tick = () => {
     const d = new Date();
     const p = (n: number) => String(n).padStart(2, "0");
     const mon = d.toLocaleString("en-US", { month: "short" });
     clock.textContent = `${p(d.getHours())}:${p(d.getMinutes())} ${p(d.getDate())}-${mon}-${String(d.getFullYear()).slice(2)}`;
+    setTimeout(tick, 60_000 - (d.getTime() % 60_000));
   };
   tick();
-  setInterval(tick, 1000);
 }
 
 // ------------------------------------------------------------ who's on

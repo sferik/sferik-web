@@ -49,13 +49,16 @@ test.describe("startup", () => {
     await expect(shell(page)).toBeFocused();
   });
 
-  test("the status line clock ticks", async ({ page }) => {
-    await page.clock.install({ time: new Date(2026, 9, 1, 9, 5) });
+  test("the status line clock ticks, on the minute", async ({ page }) => {
+    await page.clock.install({ time: new Date(2026, 9, 1, 9, 5, 40) });
     await page.goto("/");
     const clock = page.locator("[data-clock]");
     await expect(clock).toHaveText("09:05 01-Oct-26");
-    await page.clock.runFor(60_000);
+    // Not a minute after the page loaded, but when the minute changes: within twenty seconds, here.
+    await page.clock.runFor(21_000);
     await expect(clock).toHaveText("09:06 01-Oct-26");
+    await page.clock.runFor(60_000);
+    await expect(clock).toHaveText("09:07 01-Oct-26");
   });
 
   test("prints a note for people who open the console", async ({ page }) => {
