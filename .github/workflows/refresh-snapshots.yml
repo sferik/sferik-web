@@ -1,7 +1,8 @@
-# Refreshes the fallback copy of the GitHub contribution graph.
-# The page fetches live data on every load; this snapshot is only shown
-# if that request fails, so it just needs to be reasonably recent.
-name: Refresh contributions snapshot
+# Refreshes the snapshots in data/: the GitHub contribution graph, and each
+# project's downloads and stars. The site shows live numbers; these are only
+# shown when RubyGems or GitHub can't be reached (and, on Workers, until the
+# first refresh after a deploy), so they just need to be reasonably recent.
+name: Refresh snapshots
 
 on:
   schedule:
@@ -15,7 +16,10 @@ jobs:
   refresh:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
 
       - name: Download contributions
         run: |
@@ -24,14 +28,20 @@ jobs:
           jq -e '(.contributions | length) >= 365 and (.total | type == "object")' /tmp/contributions.json > /dev/null
           mv /tmp/contributions.json data/contributions.json
 
+      # Node runs the script as it is (type stripping), so there's nothing to install.
+      - name: Refresh downloads and stars
+        run: node scripts/snapshot.ts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
       - name: Commit if changed
         run: |
-          if git diff --quiet -- data/contributions.json; then
+          if git diff --quiet -- data/; then
             echo "No changes."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/contributions.json
-          git commit -m "Refresh contributions snapshot"
+          git add data/contributions.json data/projects.json
+          git commit -m "Refresh snapshots"
           git push

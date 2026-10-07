@@ -2,6 +2,7 @@ import { test, expect } from "./support/fixtures.ts";
 import type { Page } from "@playwright/test";
 import { mockAPIs, SNAPSHOT, SNAPSHOT_TOTAL } from "./support/mocks.ts";
 import profile from "../data/profile.json" with { type: "json" };
+import projects from "../data/projects.json" with { type: "json" };
 
 const shell = (page: Page) => page.locator("[data-repl] input");
 const log = (page: Page) => page.locator(".repl-log");
@@ -60,11 +61,14 @@ test.describe("live data", () => {
   // The test server runs offline, so it serves the snapshots in data/.
   test("download total comes from the API and links to the profile", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator("[data-live=downloads]")).toHaveText("5.5B");
+    // Whatever the snapshot says today: a daily job refreshes it (scripts/snapshot.ts).
+    const fmt = (n: number) => n.toLocaleString("en-US");
+    const multi = projects.projects.filter((p) => ["multi_json", "multi_xml"].includes(p.name)).reduce((total, p) => total + p.downloads!, 0);
+    await expect(page.locator("[data-live=downloads]")).toHaveText(`${(projects.totalDownloads / 1e9).toFixed(1)}B`);
     const link = page.locator("a", { has: page.locator("[data-live=downloads]") });
     await expect(link).toHaveAttribute("href", "https://rubygems.org/profiles/sferik");
-    await expect(link).toHaveAttribute("title", "5,460,234,129 downloads across all 65 gems");
-    await expect(page.locator("#whoami + .out")).toContainText("which have 1,776,183,113 combined downloads");
+    await expect(link).toHaveAttribute("title", `${fmt(projects.totalDownloads)} downloads across all ${projects.gemCount} gems`);
+    await expect(page.locator("#whoami + .out")).toContainText(`which have ${fmt(multi)} combined downloads`);
   });
 
   test("without a recent push, the GitHub line is static", async ({ page }) => {

@@ -9,6 +9,7 @@
     "deploy": "bun run build && wrangler deploy",
     "build": "tsc -p tsconfig.client.json",
     "og": "node scripts/og.ts",
+    "snapshot": "node scripts/snapshot.ts",
     "lighthouse": "bun run build && node scripts/lighthouse.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.client.json --noEmit",
     "lint": "eslint . && prettier --check .",

@@ -46,6 +46,7 @@ Then open <http://localhost:3745>. (3745 spells "erik" on a phone keypad.)
 | `bun test`             | The server tests alone, quickly, with Bun's test runner (no coverage thresholds; it can't run the browser tests)                                                                                                                                        |
 | `bun run test:browser` | Playwright against a real Chrome; fails below 100% coverage of the browser code                                                                                                                                                                         |
 | `bun run coverage`     | Run the browser tests and open the coverage report                                                                                                                                                                                                      |
+| `bun run snapshot`     | Refresh the downloads and stars in `data/projects.json` from RubyGems and GitHub                                                                                                                                                                        |
 | `bun run og`           | Redraw the link-preview images in `public/` after the data changes                                                                                                                                                                                      |
 
 The first time you run the browser tests on a new machine, Playwright may need a browser: locally it uses your installed Chrome; elsewhere, run
@@ -160,7 +161,7 @@ src/
     shell.ts         The fish shell: parsing, pipes, job control, and every command
     dom.ts           Small DOM helpers
 data/                Content and snapshots: profile, whoami, the comic, projects, talks, resume, contributions
-scripts/             The Lighthouse budget, and what draws the preview images
+scripts/             The Lighthouse budget, what draws the preview images, and what refreshes the snapshot of downloads and stars
 public/              Everything the server serves as-is (HTML skeletons, CSS, images, fonts)
 tests/
   server/            Server and Worker tests (node:test), which `bun test` also runs
@@ -203,7 +204,8 @@ PORT=8080 GITHUB_TOKEN=… node src/server.ts
 It shuts down cleanly on `SIGTERM`. The page's shell treats sferik.net, sferik.com, sferik.org, and sferik.me as its own, so
 `curl sferik.com/resume` inside it works too.
 
-A GitHub Action (`.github/workflows/refresh-contributions.yml`) refreshes `data/contributions.json` daily, so the fallback snapshot stays recent. Another
+A GitHub Action (`.github/workflows/refresh-snapshots.yml`) refreshes `data/contributions.json` and the downloads and stars in `data/projects.json` daily
+(`bun run snapshot` does the latter by hand), so the fallback snapshots stay recent. Another
 (`.github/workflows/ci.yml`) lints, type-checks, and runs both test suites on every push and pull request, with the server tests on the oldest and newest
 supported Node. Dependabot proposes package and action updates weekly, once a release is a week old.
 

@@ -31,6 +31,15 @@ import { stub } from "../support/stub.ts";
 
 const ROOT = path.join(import.meta.dirname, "..", "..");
 
+// The snapshot of downloads and stars, which a daily job refreshes (scripts/snapshot.ts), so the tests read
+// what it says rather than say it themselves.
+const SNAPSHOT = JSON.parse(fs.readFileSync(path.join(ROOT, "data", "projects.json"), "utf8")) as {
+  totalDownloads: number;
+  projects: { name: string; downloads: number | null; stars: number | null }[];
+};
+const snapshot = (name: string) => SNAPSHOT.projects.find((p) => p.name === name)!;
+const MULTI = snapshot("multi_json").downloads! + snapshot("multi_xml").downloads!;
+
 interface Got {
   status: number;
   type: string;
@@ -166,8 +175,8 @@ describe("offline (snapshots from data/)", () => {
 
   test("every module as JSON and text", async () => {
     const whoami = JSON.parse((await app.get("/whoami", { accept: JSON_ })).body);
-    assert.equal(whoami.multiDownloads, 1_776_183_113);
-    assert.match(whoami.blocks[1].html, /1,776,183,113 combined downloads/);
+    assert.equal(whoami.multiDownloads, MULTI);
+    assert.ok(whoami.blocks[1].html.includes(`${MULTI.toLocaleString("en-US")} combined downloads`));
     assert.ok(whoami.blocks.every((b: { type: string }) => b.type === "p"));
     const dependency = JSON.parse((await app.get("/dependency", { accept: JSON_ })).body);
     assert.equal(dependency.command, "imgcat ~/dependency.webp");
@@ -183,17 +192,17 @@ describe("offline (snapshots from data/)", () => {
 
     const src = JSON.parse((await app.get("/src", { accept: JSON_ })).body);
     assert.equal(src.live, false);
-    assert.equal(src.total.downloads, 5_460_234_129);
+    assert.equal(src.total.downloads, SNAPSHOT.totalDownloads);
     assert.equal(src.projects[0].name, "multi_json");
     assert.equal(src.projects.at(-1).name, "rubygems.org");
-    assert.equal(src.projects.find((p: { name: string }) => p.name === "tesla").stars, 1);
+    assert.equal(src.projects.find((p: { name: string }) => p.name === "tesla").stars, snapshot("tesla").stars);
     const srcText = (await app.get("/src")).body;
-    assert.match(srcText, /^multi_json +One interface to every Ruby JSON library\. +1\.2B↓ +27★$/m);
-    assert.match(srcText, /^openai .* 2\.3M↓/m);
-    assert.match(srcText, /^tesla +Ruby client for my car\. +6\.0k↓ +1★\nsferik +Ruby client for this website\. +0↓ +1★\nrubygems\.org /m);
+    assert.match(srcText, /^multi_json +One interface to every Ruby JSON library\. +\d\.\dB↓ +\d+★$/m);
+    assert.match(srcText, /^openai .* [\d.]+M↓/m);
+    assert.match(srcText, /^tesla +Ruby client for my car\. +[\d.]+k?↓ +\d+★\nsferik +Ruby client for this website\. +[\d.]+k?↓ +\d+★\nrubygems\.org /m);
     assert.match(srcText, /^octokit +GitHub API Ruby client\. /m);
-    assert.match(srcText, /^rubygems\.org +The Ruby package registry\. +2\.4k★$/m);
-    assert.match(srcText, /^total +5\.5B↓ +\d+\.\dk★$/m);
+    assert.match(srcText, /^rubygems\.org +The Ruby package registry\. +[\d.]+k★$/m);
+    assert.match(srcText, /^total +\d\.\dB↓ +\d+\.\dk★$/m);
 
     assert.equal(JSON.parse((await app.get("/name", { accept: JSON_ })).body).commit, "8c0d698");
     assert.match((await app.get("/name")).body, /^8c0d698 Rename Erik Michaels-Ober to Erik Berlin \(2017\)\nWhen Diana/);
@@ -586,7 +595,7 @@ describe("live data", () => {
     assert.equal(src.total.downloads, 3_030_000_000);
     assert.equal(src.total.gems, 3);
     assert.equal(src.projects[0].downloads, 2_000_000_000);
-    assert.equal(src.projects.find((p: { name: string }) => p.name === "simplecov").downloads, 505164512); // not in the live list: snapshot
+    assert.equal(src.projects.find((p: { name: string }) => p.name === "simplecov").downloads, snapshot("simplecov").downloads); // not in the live list: snapshot
     assert.equal(src.projects.find((p: { name: string }) => p.name === "rubygems.org").stars, 1234);
     const github = net.calls.find((c) => c.url.includes("api.github.com"))!;
     assert.equal((github.init.headers as Record<string, string>).authorization, "Bearer secret");
@@ -615,7 +624,7 @@ describe("live data", () => {
     });
     const app = await serve({ fetch: net.fetch, timeout: 20 });
     const src = JSON.parse((await app.get("/src", { accept: JSON_ })).body);
-    assert.equal(src.total.downloads, 5_460_234_129);
+    assert.equal(src.total.downloads, SNAPSHOT.totalDownloads);
     const graph = JSON.parse((await app.get("/contributions", { accept: JSON_ })).body);
     assert.equal(graph.live, false);
     // As of the day of each snapshot.
