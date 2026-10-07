@@ -357,6 +357,16 @@ describe("offline (snapshots from data/)", () => {
     assert.deepEqual(await data("/resume"), { "/resume": JSON.parse((await app.get("/resume", { accept: JSON_ })).body) });
   });
 
+  test("each page has its text in it, for a reader that doesn't run scripts", async () => {
+    for (const url of ["/", "/talks", "/resume"]) {
+      const { body } = await app.get(url, { accept: HTML });
+      const pre = /<noscript\s*><p>[^<]+<code>curl sferik\.net[\w/]*<\/code> prints:\s*<\/p><pre>(.*?)<\/pre><\/noscript>/s.exec(body)!;
+      const text = (await app.get(url)).body;
+      assert.equal(pre[1], text.trimEnd().replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"), url);
+    }
+    assert.match((await app.get("/", { accept: HTML })).body, /<pre>╭─+╮\n│ Erik Berlin +│[^]*sferik@mbp ~&gt; whoami\nI've spent nearly two decades/);
+  });
+
   test("~/.signature is the motto", async () => {
     const res = await app.get("/.signature");
     assert.match(res.type, /^text\/plain/);

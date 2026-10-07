@@ -176,6 +176,11 @@ ol {
 pre {
   font: inherit;
 }
+/* Without scripts, a page is its text (server.ts puts it there), 80 columns wide. */
+noscript pre {
+  margin-top: 1lh;
+  overflow-x: auto;
+}
 b,
 strong {
   font-weight: 700;

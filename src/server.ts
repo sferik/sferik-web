@@ -1293,7 +1293,12 @@ export function createApp({
           page = page.replace('<header class="banner" data-profile></header>', banner((await read("profile")) as Profile, await figletFont()));
         if (file === "talks.html") page = page.replace("</head>", `  ${talksJsonLd((await site.modules.talks()) as Talks)}\n  </head>`);
         // Every page gets the JSON it builds itself from, so it needn't ask for it.
-        page = page.replace("</body>", `  ${await embedded(file)}\n  </body>`);
+        const data = await embedded(file);
+        page = page.replace("</body>", () => `  ${data}\n  </body>`);
+        // And, for a reader that doesn't run scripts (a crawler, a link preview,
+        // a text browser), the page as text: what curl gets.
+        const text = await resources[file === "index.html" ? "/" : `/${file.replace(".html", "")}`].text();
+        page = page.replace(/<\/noscript\s*>/, () => `<pre>${xml(text.trimEnd())}</pre></noscript>`);
         return send(200, CONTENT_TYPE.html, page, { vary: "Accept", "cache-control": "no-cache" });
       }
       const headers = {
