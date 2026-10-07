@@ -477,6 +477,12 @@ describe("offline (snapshots from data/)", () => {
     assert.equal((await app.get("/nope", { accept: "image/png" })).status, 404);
   });
 
+  test("400 for a path that isn't properly percent-encoded", async () => {
+    const res = await app.get("/%E0%A4%A");
+    assert.equal(res.status, 400);
+    assert.equal(res.body, "Bad Request: the path isn't properly percent-encoded\n");
+  });
+
   test("the podcasts alone, which the talks have too", async () => {
     const talks = JSON.parse((await app.get("/talks", { accept: JSON_ })).body) as { podcasts: { title: string; show: string }[] };
     assert.deepEqual(JSON.parse((await app.get("/podcasts", { accept: JSON_ })).body), { command: "ls -lt ~/podcasts", podcasts: talks.podcasts });

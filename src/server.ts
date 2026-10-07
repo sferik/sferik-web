@@ -1179,7 +1179,13 @@ export function createApp({
       return send(204, "text/plain", "", { ...cors, "access-control-allow-methods": "GET, HEAD, OPTIONS", "access-control-allow-headers": "accept" });
     }
     const url = new URL(req.url!, "http://localhost");
-    let pathname = decodeURIComponent(url.pathname).replace(/\/+$/, "") || "/";
+    // A path that isn't properly percent-encoded (/%E0%A4%A) can't be decoded: that's the client's mistake.
+    let pathname: string;
+    try {
+      pathname = decodeURIComponent(url.pathname).replace(/\/+$/, "") || "/";
+    } catch {
+      return send(400, "text/plain; charset=utf-8", "Bad Request: the path isn't properly percent-encoded\n", cors);
+    }
 
     // What the two POSTs say: plain text, or JSON for a client that prefers it,
     // where an error has a code a program can tell it from the others by.
