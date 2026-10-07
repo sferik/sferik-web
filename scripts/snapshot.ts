@@ -15,10 +15,22 @@ const file = path.join(DATA, "projects.json");
 const data = JSON.parse(fs.readFileSync(file, "utf8")) as ProjectsFile;
 const token = process.env.GITHUB_TOKEN;
 
-async function get<T>(url: string, token?: string): Promise<T> {
-  const res = await fetch(url, { headers: { "user-agent": "sferik.net", accept: "application/json", ...(token && { authorization: `Bearer ${token}` }) } });
+async function get<T>(url: string): Promise<T> {
+  const res = await fetch(url, { headers: { "user-agent": "sferik.net", accept: "application/json" } });
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   return (await res.json()) as T;
+}
+
+// GitHub's GraphQL API, which answers only with a token: every repository's stars in one request, and the graph.
+async function graphql<T>(query: string): Promise<T> {
+  const res = await fetch("https://api.github.com/graphql", {
+    method: "POST",
+    headers: { "user-agent": "sferik.net", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ query }),
+  });
+  const answer = (await res.json()) as { data?: T; errors?: { message: string }[] };
+  if (!res.ok || !answer.data || answer.errors?.length) throw new Error(`GitHub's GraphQL API: ${res.status} ${answer.errors?.[0].message ?? ""}`);
+  return answer.data;
 }
 
 const gems = await get<{ name: string; downloads: number }[]>("https://rubygems.org/api/v1/owners/sferik/gems.json");
@@ -27,14 +39,26 @@ if (gems.length < data.gemCount - 5 || !gems.every((g) => Number.isInteger(g.dow
   throw new Error(`RubyGems listed ${gems.length} gems, not ${data.gemCount}`);
 const downloads = new Map(gems.map((g) => [g.name, g.downloads]));
 
+// Each repository's stars: all in one request with a token, as the server asks (starred, in src/server.ts), or one each without.
+const repos = data.projects.flatMap((project) => project.repo ?? []);
+const fields = repos.map((repo, i) => {
+  const [owner, name] = repo.split("/");
+  return `r${i}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { stargazerCount }`;
+});
+const counted = token ? await graphql<Record<string, { stargazerCount: number }>>(`query { ${fields.join(" ")} }`) : null;
+const counts = await Promise.all(
+  repos.map(
+    async (repo, i) => counted?.[`r${i}`].stargazerCount ?? (await get<{ stargazers_count: number }>(`https://api.github.com/repos/${repo}`)).stargazers_count,
+  ),
+);
+const stars = new Map(repos.map((repo, i) => [repo, counts[i]]));
+if (counts.length !== repos.length || !counts.every(Number.isInteger))
+  throw new Error(`GitHub counted stars for ${counts.length} repositories, not ${repos.length}`);
+
 for (const project of data.projects) {
   // A gem someone else owns keeps the downloads it has.
   if (project.gem) project.downloads = downloads.get(project.gem) ?? project.downloads;
-  if (project.repo) {
-    const repo = await get<{ stargazers_count: number }>(`https://api.github.com/repos/${project.repo}`, token);
-    if (!Number.isInteger(repo.stargazers_count)) throw new Error(`${project.repo} has no count of stars`);
-    project.stars = repo.stargazers_count;
-  }
+  if (project.repo) project.stars = stars.get(project.repo)!;
 }
 data.totalDownloads = gems.reduce((total, g) => total + g.downloads, 0);
 data.gemCount = gems.length;
@@ -47,16 +71,25 @@ console.log(`${data.gemCount} gems, ${data.totalDownloads.toLocaleString("en-US"
 if (token) {
   const LEVELS = ["NONE", "FIRST_QUARTILE", "SECOND_QUARTILE", "THIRD_QUARTILE", "FOURTH_QUARTILE"];
   type Calendar = { totalContributions: number; weeks: { contributionDays: { date: string; contributionCount: number; contributionLevel: string }[] }[] };
-  const query = `query { user(login: "sferik") { contributionsCollection { contributionCalendar {
-    totalContributions weeks { contributionDays { date contributionCount contributionLevel } } } } } }`;
-  const res = await fetch("https://api.github.com/graphql", {
-    method: "POST",
-    headers: { "user-agent": "sferik.net", authorization: `Bearer ${token}` },
-    body: JSON.stringify({ query }),
-  });
-  const answer = (await res.json()) as { data?: { user: { contributionsCollection: { contributionCalendar: Calendar } } }; errors?: { message: string }[] };
-  if (!res.ok || !answer.data || answer.errors?.length) throw new Error(`GitHub's GraphQL API: ${res.status} ${answer.errors?.[0].message ?? ""}`);
-  const calendar = answer.data.user.contributionsCollection.contributionCalendar;
+  const { user } = await graphql<{ user: { contributionsCollection: { contributionCalendar: Calendar } } }>(`
+    query {
+      user(login: "sferik") {
+        contributionsCollection {
+          contributionCalendar {
+            totalContributions
+            weeks {
+              contributionDays {
+                date
+                contributionCount
+                contributionLevel
+              }
+            }
+          }
+        }
+      }
+    }
+  `);
+  const calendar = user.contributionsCollection.contributionCalendar;
   const contributions = calendar.weeks.flatMap((week) =>
     week.contributionDays.map((day) => ({ date: day.date, count: day.contributionCount, level: LEVELS.indexOf(day.contributionLevel) })),
   );
