@@ -2,7 +2,7 @@
 # parallel; any one failing fails the run. Both test suites also fail below
 # 100% coverage. Bun installs the packages and runs the scripts; Node runs the
 # server and its tests. A push to main that passes all of them deploys to
-# Cloudflare Workers.
+# Cloudflare Workers, then checks that the site is serving it.
 name: CI
 
 on:
@@ -150,3 +150,20 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # A deploy can succeed and the site still not be this commit, or not
+      # work: ask it. A new version takes a few seconds to be everywhere.
+      - name: Check that sferik.net is serving this commit
+        run: |
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            commit=$(curl -fsS https://sferik.net/version | jq -r .commit) || commit=
+            [ "$commit" = "$GITHUB_SHA" ] && break
+            sleep 6
+          done
+          if [ "$commit" != "$GITHUB_SHA" ]; then
+            echo "::error::sferik.net/version says ${commit:-nothing}, not $GITHUB_SHA"
+            exit 1
+          fi
+          # A page from the Worker, with its banner; a script from the static assets; and the API.
+          curl -fsS -H 'Accept: text/html' https://sferik.net/ | grep -q '<pre class="figlet"'
+          curl -fsS -o /dev/null https://sferik.net/site.js
+          curl -fsS https://sferik.net/whoami.json | jq -e '.blocks | length > 0' > /dev/null

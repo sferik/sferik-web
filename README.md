@@ -207,7 +207,7 @@ It shuts down cleanly on `SIGTERM`. The page's shell treats sferik.net, sferik.c
 A GitHub Action (`.github/workflows/refresh-snapshots.yml`) refreshes `data/contributions.json` and the downloads and stars in `data/projects.json` daily
 (`bun run snapshot` does the latter by hand), so the fallback snapshots stay recent. Another
 (`.github/workflows/ci.yml`) lints, type-checks, and runs both test suites on every push and pull request, with the server tests on the oldest and newest
-supported Node. Dependabot proposes package and action updates weekly, once a release is a week old.
+supported Node. A push to `main` that passes is deployed, and then the job asks sferik.net's `/version` whether it's serving that commit. Dependabot proposes package and action updates weekly, once a release is a week old.
 
 ## Credits
 
