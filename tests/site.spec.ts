@@ -817,7 +817,7 @@ test.describe("the resume", () => {
 test.describe("the talks page", () => {
   test("links the former name to the name change, shown with git show in the home page's shell", async ({ page }) => {
     await page.goto("/talks");
-    await expect(page.getByText("18 talks at 16 conferences in 13 countries")).toBeVisible();
+    await expect(page.getByText("23 talks at 19 events in 13 countries")).toBeVisible();
     await page.getByRole("link", { name: "my former name, Erik Michaels-Ober" }).click();
     await expect(page.locator(".repl-log")).toContainText("commit 8c0d698bb6cb54346ac26a38f7056ee64dafd64d");
     await expect(page).toHaveURL("/");

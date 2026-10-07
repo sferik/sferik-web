@@ -598,7 +598,7 @@ async function buildTalks(main: HTMLElement) {
         el(
           "p",
           {},
-          `${m.talks.length} talks at ${conferences} conferences in ${countries} countries, ${years.at(-1)} to ${years[0]}. Talks from before 2017 are listed under `,
+          `${m.talks.length} talks at ${conferences} events in ${countries} countries, ${years.at(-1)} to ${years[0]}. Talks from before 2017 are listed under `,
           // Like the commit on the home page, it shows the name change: git show, in the home page's shell.
           el("a", { href: "/?run=git+show+8c0d698" }, "my former name, Erik Michaels-Ober"),
           ". Slides are also on ",

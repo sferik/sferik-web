@@ -60,7 +60,7 @@ const CARDS: Record<string, string> = {
     "ls -lt ~/talks",
     1,
     `<h1>Talks</h1>
-    <p class="dim">${talks.talks.length} talks at ${conferences} conferences in 13 countries, ${years.at(-1)} to ${years[0]}</p>
+    <p class="dim">${talks.talks.length} talks at ${conferences} events in 13 countries, ${years.at(-1)} to ${years[0]}</p>
     <ol>${featured.map((t) => `<li><span class="dim">${t.date}</span>  ${esc(t.title)}</li>`).join("")}</ol>`,
   ),
   "og-resume.png": card(

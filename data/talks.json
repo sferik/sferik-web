@@ -3,6 +3,24 @@
   "speakerDeck": "https://speakerdeck.com/sferik",
   "talks": [
     {
+      "title": "Enumerator::Lazy",
+      "event": "SF.rb",
+      "location": "San Francisco",
+      "date": "2016-08",
+      "slides": "https://speakerdeck.com/sferik/enumerator-lazy",
+      "video": null,
+      "featured": false
+    },
+    {
+      "title": "Ruby Trivia 3",
+      "event": "Berlin Ruby User Group",
+      "location": "Berlin",
+      "date": "2015-12",
+      "slides": "https://speakerdeck.com/sferik/ruby-trivia-3",
+      "video": null,
+      "featured": false
+    },
+    {
       "title": "The Value of Being Lazy, or How I Made OpenStruct 10X Faster",
       "event": "Rails Israel",
       "location": "Tel Aviv",
@@ -10,6 +28,24 @@
       "slides": "https://speakerdeck.com/sferik/the-value-of-being-lazy",
       "video": "https://www.youtube.com/watch?v=6lQeBfSVrpk",
       "featured": true
+    },
+    {
+      "title": "Ruby Trivia 2",
+      "event": "Berlin Ruby User Group",
+      "location": "Berlin",
+      "date": "2015-11",
+      "slides": "https://speakerdeck.com/sferik/ruby-trivia-2",
+      "video": null,
+      "featured": false
+    },
+    {
+      "title": "Ruby Trivia",
+      "event": "Berlin Ruby User Group",
+      "location": "Berlin",
+      "date": "2015-10",
+      "slides": "https://speakerdeck.com/sferik/ruby-trivia",
+      "video": null,
+      "featured": false
     },
     {
       "title": "An Introduction to Crystal",
@@ -44,6 +80,15 @@
       "location": "Goa",
       "date": "2015-04",
       "slides": "https://speakerdeck.com/sferik/symbols",
+      "video": null,
+      "featured": false
+    },
+    {
+      "title": "Secrets to Powerful APIs (panel)",
+      "event": "SXSW",
+      "location": "Austin",
+      "date": "2015-03",
+      "slides": null,
       "video": null,
       "featured": false
     },
@@ -170,6 +215,11 @@
       "lat": 52.37,
       "lon": 4.9,
       "country": "Netherlands"
+    },
+    "Austin": {
+      "lat": 30.27,
+      "lon": -97.74,
+      "country": "United States"
     },
     "Barcelona": {
       "lat": 41.39,

@@ -222,7 +222,7 @@ describe("offline (snapshots from data/)", () => {
     assert.equal(JSON.parse((await app.get("/name", { accept: JSON_ })).body).commit, "8c0d698");
     assert.match((await app.get("/name")).body, /^8c0d698 Rename Erik Michaels-Ober to Erik Berlin \(2017\)\nWhen Diana/);
 
-    assert.equal(JSON.parse((await app.get("/talks", { accept: JSON_ })).body).talks.length, 18);
+    assert.equal(JSON.parse((await app.get("/talks", { accept: JSON_ })).body).talks.length, 23);
     const talks = (await app.get("/talks")).body;
     assert.match(talks, /^Mar 2011 {2}GUI Programming with MacRuby$/m);
     assert.match(talks, /\nPodcasts:\nFeb 2016 {2}The Crystal Programming Language \(Ruby Rogues, episode 248\)\n {10}topenddevs\.com/);
@@ -499,8 +499,9 @@ describe("offline (snapshots from data/)", () => {
     const html = (await app.get("/talks", { accept: "text/html" })).body;
     const list = JSON.parse(/<script type="application\/ld\+json">(.*?)<\/script>/.exec(html)![1]);
     assert.equal(list["@type"], "ItemList");
-    assert.equal(list.itemListElement.length, 18);
-    const first = list.itemListElement[0].item;
+    assert.equal(list.itemListElement.length, 23);
+    assert.equal(list.itemListElement[0].item.name, "Enumerator::Lazy"); // the newest
+    const first = list.itemListElement.find((e: { item: { superEvent: { name: string } } }) => e.item.superEvent.name === "Rails Israel").item;
     assert.equal(first["@type"], "Event");
     assert.equal(first.name, "The Value of Being Lazy, or How I Made OpenStruct 10X Faster");
     assert.equal(first.startDate, "2015-11");
@@ -570,7 +571,7 @@ describe("offline (snapshots from data/)", () => {
     assert.match(res.type, /^application\/atom\+xml/);
     assert.match(res.body, /^<\?xml version="1\.0" encoding="utf-8"\?>\n<feed xmlns="http:\/\/www\.w3\.org\/2005\/Atom">/);
     const entries = res.body.match(/<entry>/g)!;
-    assert.equal(entries.length, 18);
+    assert.equal(entries.length, 23);
     assert.match(res.body, /<title>The Value of Being Lazy, or How I Made OpenStruct 10X Faster<\/title>\n {4}<updated>2015-11-01T00:00:00Z<\/updated>/);
     assert.match(res.body, /<link rel="alternate" type="text\/html" title="Video" href="https:\/\/www\.youtube\.com\/watch\?v=6lQeBfSVrpk"\/>/);
     assert.match(res.body, /<link rel="related" type="text\/html" title="Slides" href="https:\/\/speakerdeck\.com\/sferik\/the-value-of-being-lazy"\/>/);
