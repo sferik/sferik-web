@@ -200,6 +200,35 @@ describe("the Worker", () => {
     assert.equal(e.sent.length, 0);
   });
 
+  test("reads a body as it arrives, and turns away one that's too long without keeping it", async () => {
+    const e = env();
+    const chunks = Array.from({ length: 6 }, () => new TextEncoder().encode("x".repeat(1000)));
+    const body = new ReadableStream<Uint8Array>({ pull: (controller) => (chunks.length ? controller.enqueue(chunks.pop()!) : controller.close()) });
+    const request = new Request("https://sferik.net/write", {
+      method: "POST",
+      body,
+      headers: { "cf-connecting-ip": "192.0.2.1" },
+      duplex: "half",
+    } as RequestInit);
+    const res = await worker.fetch(request, e);
+    assert.deepEqual([res.status, chunks.length, e.sent.length], [413, 0, 0]);
+    // In pieces, a message is still one message.
+    const pieces = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const piece of ["Hello, ", "in two pieces"]) controller.enqueue(new TextEncoder().encode(piece));
+        controller.close();
+      },
+    });
+    const sent = new Request("https://sferik.net/write", {
+      method: "POST",
+      body: pieces,
+      headers: { "cf-connecting-ip": "192.0.2.1" },
+      duplex: "half",
+    } as RequestInit);
+    assert.equal((await worker.fetch(sent, e)).status, 202);
+    assert.match(Buffer.from(e.sent[0].raw.split("\r\n\r\n")[1], "base64").toString(), /^Hello, in two pieces\n/);
+  });
+
   test("takes write's Idempotency-Key, so a message sent again isn't emailed twice, unless it didn't go through", async (t) => {
     stub(t, console, "error", () => {});
     const e = env();

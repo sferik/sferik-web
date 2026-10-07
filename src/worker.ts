@@ -104,11 +104,10 @@ const mailer = (env: Env) => async (l: Letter) =>
 
 // Run the app's Node-style handler on a Fetch API request. It only reads the
 // method, URL, a few headers (Accept, If-None-Match, Idempotency-Key, and for
-// a POST where it's from), the body (as one chunk), and the visitor's address, and answers with one writeHead and
+// a POST where it's from), the body, and the visitor's address, and answers with one writeHead and
 // one end.
 export async function serve(app: App, request: Request): Promise<Response> {
   const url = new URL(request.url);
-  const sent = new Uint8Array(await request.arrayBuffer());
   const req = {
     method: request.method,
     url: url.pathname + url.search,
@@ -119,8 +118,10 @@ export async function serve(app: App, request: Request): Promise<Response> {
       host: url.host,
     },
     socket: { remoteAddress: request.headers.get("cf-connecting-ip") },
+    // The body as it arrives, so the app can stop keeping one that's too
+    // long (readBody) without all of it having been read into memory first.
     async *[Symbol.asyncIterator]() {
-      yield sent;
+      if (request.body) yield* request.body as unknown as AsyncIterable<Uint8Array>;
     },
   };
   let status = 500;
