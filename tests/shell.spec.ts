@@ -1670,7 +1670,7 @@ test.describe("less common paths", () => {
 
   test("ls -lF, ls -lh on mid-sized files, tree -I", async ({ page }) => {
     expect(await result(page, "ls -lF | tail -1")).toMatch(/ talks\/$/);
-    expect(await result(page, "ls -lh resume")).toMatch(/\d\.\dK .* index\.html$/);
+    expect(await result(page, "ls -lh dependency.webp")).toMatch(/\d\.\dK .* dependency\.webp$/);
     expect(await result(page, "tree -I talks | tail -1")).toBe("1 directory, 5 files");
     expect(await result(page, "tree -I '*.txt' | tail -1")).toBe("2 directories, 4 files");
   });

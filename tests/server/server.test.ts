@@ -299,6 +299,22 @@ describe("offline (snapshots from data/)", () => {
     assert.doesNotMatch((await app.get("/talks", { accept: "text/html" })).body, /h-card/);
   });
 
+  test("each page comes with the JSON it builds itself from, so it needn't ask", async () => {
+    const data = async (url: string) => {
+      const { body } = await app.get(url, { accept: HTML });
+      assert.match(body, /<link rel="modulepreload" href="\/dom\.js" \/>/);
+      const json = /<script type="application\/json" id="data">(.*?)<\/script>\n {2}<\/body>/s.exec(body)![1];
+      assert.doesNotMatch(json, /</); // nothing in it can end the script
+      return JSON.parse(json) as Record<string, unknown>;
+    };
+    const home = await data("/");
+    assert.deepEqual(Object.keys(home), ["/", "/whoami", "/dependency", "/contributions", "/src", "/name", "/talks", "/finger"]);
+    // The same as the API's.
+    for (const url of Object.keys(home)) assert.deepEqual(home[url], JSON.parse((await app.get(url, { accept: JSON_ })).body), url);
+    assert.deepEqual(Object.keys(await data("/talks")), ["/talks"]);
+    assert.deepEqual(await data("/resume"), { "/resume": JSON.parse((await app.get("/resume", { accept: JSON_ })).body) });
+  });
+
   test("~/.signature is the motto", async () => {
     const res = await app.get("/.signature");
     assert.match(res.type, /^text\/plain/);

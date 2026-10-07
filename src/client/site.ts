@@ -93,8 +93,16 @@ export async function checkIn(): Promise<Who> {
 
 // ------------------------------------------------------------- the API
 // Every page builds itself from the same URLs the API serves: ask for JSON,
-// render it. (Ask for text/plain instead and you get terminal output.)
+// render it. (Ask for text/plain instead and you get terminal output.) What
+// the page itself needs comes with it (server.ts's embedded), so building it
+// takes no requests; each of those is used once, and asked for after that.
+const embedded = new Map(Object.entries(JSON.parse($("#data")?.textContent ?? "{}") as Record<string, unknown>));
 export async function getJSON<T>(url: string): Promise<T> {
+  if (embedded.has(url)) {
+    const data = embedded.get(url) as T;
+    embedded.delete(url);
+    return data;
+  }
   const res = await fetch(url, { headers: { accept: "application/json" } });
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   return res.json() as Promise<T>;

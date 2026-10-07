@@ -2,7 +2,7 @@
 // command. Together with site.spec.js these keep site.js at 100% coverage.
 import { test, expect } from "./support/fixtures.ts";
 import type { Page } from "@playwright/test";
-import { mockAPIs } from "./support/mocks.ts";
+import { mockAPIs, unembed } from "./support/mocks.ts";
 import profile from "../data/profile.json" with { type: "json" };
 
 const shell = (page: Page) => page.locator("[data-repl] input");
@@ -81,6 +81,11 @@ async function serveModule(page: Page, path: string, patch: Record<string, unkno
 }
 
 test.describe("rendering from the API", () => {
+  // Without the JSON the page comes with, it asks the API, where these tests answer.
+  test.beforeEach(async ({ page }) => {
+    await unembed(page);
+  });
+
   for (const [label, ms, text] of [
     ["seconds", 5e3, "moments ago"],
     ["one minute", 61e3, "1 minute ago"],

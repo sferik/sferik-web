@@ -18,6 +18,14 @@ test.beforeEach(async ({ page }) => {
 // ------------------------------------------------------------------ pages
 
 test.describe("pages", () => {
+  test("each page builds itself from the JSON it comes with, without asking the API", async ({ page }) => {
+    const asked: string[] = [];
+    page.on("request", (r) => r.headers().accept === "application/json" && asked.push(new URL(r.url()).pathname));
+    for (const url of ["/", "/talks", "/resume"]) await page.goto(url);
+    await expect(page.locator("main")).toContainText("General Commands Manual");
+    expect(asked).toEqual([]);
+  });
+
   for (const [url, title] of [
     ["/", "Erik Berlin"],
     ["/talks", "Talks, Erik Berlin"],

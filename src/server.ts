@@ -1159,6 +1159,15 @@ export function createApp({
   const SUFFIX: Record<string, Format> = { json: "json", txt: "text", tex: "latex", pdf: "pdf" };
   const FILENAME: Partial<Record<Format, string>> = { latex: "erik-berlin-resume.tex", pdf: "erik-berlin-resume.pdf" };
 
+  // The JSON a page builds itself from, by URL, in the page itself: what it
+  // would otherwise ask for as soon as it loaded (eight requests, for the home
+  // page). site.ts's getJSON looks here first.
+  async function embedded(file: string): Promise<string> {
+    const urls = file === "index.html" ? ["/", ...(await site.home()).modules.map((m) => m.url)] : [`/${file.replace(".html", "")}`];
+    const data = Object.fromEntries(await Promise.all(urls.map(async (url) => [url, await resources[url].json()] as const)));
+    return `<script type="application/json" id="data">${JSON.stringify(data).replace(/</g, "\\u003c")}</script>`;
+  }
+
   async function handle(req: IncomingMessage, res: ServerResponse) {
     // A successful response gets an ETag; asking again with it (If-None-Match)
     // gets 304 Not Modified, without the body. Proxies may weaken it (W/).
@@ -1276,14 +1285,12 @@ export function createApp({
       if (format === "html") {
         const file = PAGES[pathname] ?? PAGES["/"];
         // The home page gets its h-card, and the talks page its JSON-LD.
-        const raw = await asset(file);
-        let page: string | Uint8Array = raw;
+        let page = new TextDecoder().decode(await asset(file));
         if (file === "index.html")
-          page = new TextDecoder()
-            .decode(raw)
-            .replace('<header class="banner" data-profile></header>', banner((await read("profile")) as Profile, await figletFont()));
-        if (file === "talks.html")
-          page = new TextDecoder().decode(raw).replace("</head>", `  ${talksJsonLd((await site.modules.talks()) as Talks)}\n  </head>`);
+          page = page.replace('<header class="banner" data-profile></header>', banner((await read("profile")) as Profile, await figletFont()));
+        if (file === "talks.html") page = page.replace("</head>", `  ${talksJsonLd((await site.modules.talks()) as Talks)}\n  </head>`);
+        // Every page gets the JSON it builds itself from, so it needn't ask for it.
+        page = page.replace("</body>", `  ${await embedded(file)}\n  </body>`);
         return send(200, CONTENT_TYPE.html, page, { vary: "Accept", "cache-control": "no-cache" });
       }
       const headers = {

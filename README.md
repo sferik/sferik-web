@@ -75,8 +75,9 @@ The first time you run the browser tests on a new machine, Playwright may need a
   └───────────────────────────────────────────────────────────────────────┘
 ```
 
-The browser first gets an HTML skeleton, then asks the same URLs for JSON and renders what comes back. The shell's `whoami`, `finger`, `man sferik`, and
-`curl` use those URLs too. Everything else asks for whatever format it wants.
+The browser gets an HTML skeleton and renders the same JSON those URLs serve. The JSON a page needs comes inside it (a `<script type="application/json">`),
+so building it takes no more requests; without that, the page asks the URLs. The shell's `whoami`, `finger`, `man sferik`, and `curl` ask them too.
+Everything else asks for whatever format it wants.
 
 ## The API
 

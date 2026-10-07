@@ -213,12 +213,16 @@ strong {
 /* ------------------------------------------------------------------ */
 
 /* The scroller spans the full window so its scrollbar sits at the edge;
-   the text column inside it stays 80 characters wide and centered. */
+   the text column inside it stays 80 characters wide and centered. Where a
+   scrollbar takes room, the room is kept for it from the start, so the column
+   doesn't move over when the page builds itself and grows past the window,
+   and kept on both sides, so the column is in the middle of the window. */
 .scroller {
   position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  scrollbar-gutter: stable both-edges;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
 }
@@ -898,6 +902,11 @@ main[aria-busy] > .repl {
 .tmux .right {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* Room for the clock ("09:41 07-Oct-26") before it's filled in, so the status line doesn't move when it is. */
+.tmux [data-clock] {
+  display: inline-block;
+  min-width: 15ch;
 }
 @media (max-width: 560px) {
   .tmux .session,

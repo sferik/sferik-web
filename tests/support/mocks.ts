@@ -48,4 +48,19 @@ async function mockAPIs(page: Page, { gems = PER_GEM, github, contributions = LI
   if (snapshot === "fail") await page.route("**/data/contributions.json", (route) => route.abort());
 }
 
-export { mockAPIs, pushEvent, hoursAgo, SNAPSHOT, SNAPSHOT_TOTAL, LIVE_TOTAL, LONG_TAIL, PER_GEM };
+// A page comes with the JSON it builds itself from, and asks only for what's
+// missing. This takes it out on the way, so the page asks for it all, and a
+// test can answer in the API's place.
+async function unembed(page: Page) {
+  await page.route(
+    (url) => ["/", "/talks", "/resume"].includes(url.pathname),
+    async (route) => {
+      if (!route.request().isNavigationRequest()) return route.fallback();
+      const response = await route.fetch();
+      const body = (await response.text()).replace(/<script type="application\/json" id="data">.*?<\/script>/s, "");
+      await route.fulfill({ response, body });
+    },
+  );
+}
+
+export { unembed, mockAPIs, pushEvent, hoursAgo, SNAPSHOT, SNAPSHOT_TOTAL, LIVE_TOTAL, LONG_TAIL, PER_GEM };
