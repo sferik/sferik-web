@@ -107,6 +107,9 @@ export class Mbp extends DurableObject<Env> {
   mail(ip: string, key?: string) {
     return this.#host.mail(ip, key);
   }
+  delivered(key: string) {
+    return this.#host.delivered(key);
+  }
   unsent(key?: string) {
     return this.#host.unsent(key);
   }

@@ -1307,6 +1307,54 @@ describe("write", () => {
     await app.close();
   });
 
+  test("with a key, a message asked after while it's still being sent is told to ask again, not that it was sent", async (t) => {
+    stub(t, console, "error", () => {});
+    let time = Date.parse("2026-10-06T20:00:00Z");
+    const sent: Letter[] = [];
+    // An email that takes as long as the test lets it, then goes through or doesn't.
+    let settle: { resolve: () => void; reject: (err: Error) => void } | undefined;
+    const slow = (l: Letter) => new Promise<void>((resolve, reject) => (settle = { resolve: () => (sent.push(l), resolve()), reject }));
+    // The email on its way, once there is one.
+    const email = async () => {
+      while (!settle) await new Promise((r) => setTimeout(r, 5));
+      const { resolve, reject } = settle;
+      settle = undefined;
+      return { resolve, reject };
+    };
+    const app = await serve({ offline: true, mail: slow, now: () => time });
+    const key = { "idempotency-key": "0f8fad5b-d9cb-469f-a165-70867728950e", accept: JSON_ };
+    const sending = async () => {
+      const res = await post(app, "hello", "", key);
+      return [res.status, JSON.parse(res.body), res.headers.get("retry-after")];
+    };
+    const still = [409, { error: "that message is still being sent; ask again in a moment", code: "sending" }, "5"];
+
+    // It doesn't go through: the one who asked meanwhile wasn't told it had.
+    const lost = post(app, "hello", "", key);
+    const failing = await email();
+    assert.deepEqual(await sending(), still);
+    failing.reject(new Error("no route"));
+    assert.equal((await lost).status, 502);
+    assert.equal(sent.length, 0);
+
+    // It does: until then it's still being sent, and after that it's sent, once.
+    time += 60e3;
+    const first = post(app, "hello", "", key);
+    const going = await email();
+    assert.deepEqual(await sending(), still);
+    going.resolve();
+    assert.equal((await first).status, 202);
+    assert.deepEqual([(await sending()).slice(0, 2), sent.length], [[202, { message: "message sent to sferik" }], 1]);
+    await app.close();
+
+    // One never heard of again (the email neither went nor failed) is free to be sent anew, a minute on.
+    const host = createHost(memoryStorage(), () => time);
+    assert.equal(await host.mail("192.0.2.1", "lost-key-00000000"), "ok");
+    assert.deepEqual(await host.mail("192.0.2.2", "lost-key-00000000"), { why: "sending", wait: 5 });
+    time += 60e3;
+    assert.equal(await host.mail("192.0.2.2", "lost-key-00000000"), "ok");
+  });
+
   test("rations messages: one a minute from an address, and twenty a day", async () => {
     let time = Date.parse("2026-10-06T20:00:00Z");
     const app = await serve({ offline: true, mail, now: () => time });

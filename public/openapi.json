@@ -491,7 +491,7 @@
       "post": {
         "operationId": "write",
         "summary": "Send Erik a message",
-        "description": "The shell's write sferik. The body is the message, as plain text (5,000 bytes at most), emailed on, with a Reply-To if it includes an email address. One message a minute from an address, and twenty a day in all. Answers in plain text, or in JSON for a client that prefers it. With an Idempotency-Key, a message that may not have arrived can be sent again: the same key within a day is the same message, which is answered as sent and not emailed twice. Same origin only.",
+        "description": "The shell's write sferik. The body is the message, as plain text (5,000 bytes at most), emailed on, with a Reply-To if it includes an email address. One message a minute from an address, and twenty a day in all. Answers in plain text, or in JSON for a client that prefers it. With an Idempotency-Key, a message that may not have arrived can be sent again: the same key within a day is the same message, which is answered as sent and not emailed twice. One asked after while it's still being sent is answered 409, with the seconds to wait before asking again. Same origin only.",
         "parameters": [
           {
             "name": "tty",
@@ -578,6 +578,34 @@
                 "example": {
                   "error": "that's for this site's own pages",
                   "code": "cross_origin"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The message with this Idempotency-Key is still being sent (sending)",
+            "headers": {
+              "Retry-After": {
+                "description": "The seconds to wait before asking again",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "write: that message is still being sent; ask again in a moment\n"
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "that message is still being sent; ask again in a moment",
+                  "code": "sending"
                 }
               }
             }
@@ -1645,7 +1673,20 @@
           },
           "code": {
             "type": "string",
-            "enum": ["bad_token", "bad_page", "empty", "bad_key", "too_long", "busy", "full", "undelivered", "unavailable", "not_found", "cross_origin"],
+            "enum": [
+              "bad_token",
+              "bad_page",
+              "empty",
+              "bad_key",
+              "too_long",
+              "busy",
+              "full",
+              "sending",
+              "undelivered",
+              "unavailable",
+              "not_found",
+              "cross_origin"
+            ],
             "description": "Which error it is, for a program to tell it from the others"
           },
           "path": {

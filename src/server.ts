@@ -887,11 +887,14 @@ export function talksJsonLd(m: Talks): string {
 // twenty a day in all. One it turns away is told how many seconds to wait.
 // A message may come with a key (Idempotency-Key), which the host keeps for
 // a day: the same key again is the same message, already sent, so a sender
-// that never heard back can send it again without it arriving twice.
+// that never heard back can send it again without it arriving twice. Until
+// the email has gone, though, the key is only being sent: the same message
+// again is told to ask later, not that it was sent, since it may yet not be.
 export interface Host {
   beat(token: string, page: Page): Promise<Who>;
   who(): Promise<Session[]>;
-  mail(ip: string, key?: string): Promise<"ok" | "sent" | { why: "busy" | "full"; wait: number }>;
+  mail(ip: string, key?: string): Promise<"ok" | "sent" | { why: "busy" | "full" | "sending"; wait: number }>;
+  delivered(key: string): Promise<void>; // a message with a key went through: the key is sent, for a day
   unsent(key?: string): Promise<void>; // a message didn't go through: give back its place in the day's ration, and forget its key
 }
 // Where the host keeps its state: a Map for the Node server, a Durable
@@ -918,6 +921,10 @@ const TTYS = 1000; // at most, so the names stay ttys000 to ttys999
 const MAIL_EVERY = 60e3;
 const MAIL_A_DAY = 20;
 const KEEP_KEYS = 864e5;
+// How long a message may be on its way. One that's been longer was never
+// heard of again (delivered or unsent), so its key is free to be sent anew.
+const SENDING = 60e3;
+const ASK_AGAIN = 5; // seconds
 
 // A ration by address that outlasts the host's memory: true if this one may
 // go on. On Workers it's a rate limit counted at Cloudflare's edge, since a
@@ -981,6 +988,13 @@ export function createHost(storage: HostStorage, now: () => number = Date.now, l
           await storage.delete(k);
         }
       if (key && keys.has(`key:${key}`)) return "sent";
+      const sending = await storage.list<number>({ prefix: "sending:" });
+      for (const [k, at] of sending)
+        if (now() - at >= SENDING) {
+          sending.delete(k);
+          await storage.delete(k);
+        }
+      if (key && sending.has(`sending:${key}`)) return { why: "sending", wait: ASK_AGAIN };
       for (const [address, at] of sent) if (now() - at >= MAIL_EVERY) sent.delete(address);
       const last = sent.get(ip);
       if (last !== undefined) return { why: "busy", wait: Math.ceil((last + MAIL_EVERY - now()) / 1000) };
@@ -990,11 +1004,15 @@ export function createHost(storage: HostStorage, now: () => number = Date.now, l
       if (count >= MAIL_A_DAY) return { why: "full", wait: Math.ceil((864e5 - (now() % 864e5)) / 1000) }; // until the next day, in UTC
       sent.set(ip, now());
       await storage.put(day, count + 1);
-      if (key) await storage.put(`key:${key}`, now());
+      if (key) await storage.put(`sending:${key}`, now());
       return "ok";
     },
+    async delivered(key) {
+      await storage.delete(`sending:${key}`);
+      await storage.put(`key:${key}`, now());
+    },
     async unsent(key) {
-      if (key) await storage.delete(`key:${key}`);
+      if (key) await storage.delete(`sending:${key}`);
       const day = `mail:${new Date(now()).toISOString().slice(0, 10)}`;
       const count = await storage.get<number>(day);
       if (count) await storage.put(day, count - 1);
@@ -1342,8 +1360,13 @@ export function createApp({
       const ration = await host.mail(String(req.socket.remoteAddress), key);
       if (ration === "sent") return say(202, "message sent to sferik"); // already, with this key
       if (ration !== "ok") {
-        const message = ration.why === "busy" ? "one message a minute, please" : "sferik has had enough messages for today; try again tomorrow";
-        return say(429, message, ration.why, { "retry-after": String(ration.wait) });
+        const message = {
+          busy: "one message a minute, please",
+          full: "sferik has had enough messages for today; try again tomorrow",
+          sending: "that message is still being sent; ask again in a moment",
+        }[ration.why];
+        // Still being sent isn't too many: it's the same message, asked after too soon.
+        return say(ration.why === "sending" ? 409 : 429, message, ration.why, { "retry-after": String(ration.wait) });
       }
       const tty = url.searchParams.get("tty");
       try {
@@ -1354,6 +1377,7 @@ export function createApp({
         // In a minute, which is when the host takes another from this address.
         return say(502, "the message didn't go through; try again later", "undelivered", { "retry-after": String(MAIL_EVERY / 1000) });
       }
+      if (key) await host.delivered(key);
       return say(202, "message sent to sferik");
     }
     if (req.method !== "GET" && req.method !== "HEAD") return send(405, "text/plain; charset=utf-8", "Method Not Allowed\n", { allow: "GET, HEAD, OPTIONS" });
