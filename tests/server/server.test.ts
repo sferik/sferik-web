@@ -1219,6 +1219,31 @@ describe("write", () => {
     await app.close();
   });
 
+  test("a message that didn't go through isn't one of the day's twenty", async (t) => {
+    stub(t, console, "error", () => {});
+    let time = Date.parse("2026-10-06T20:00:00Z");
+    let down = true;
+    const app = await serve({
+      offline: true,
+      now: () => time,
+      mail: async () => {
+        if (down) throw new Error("no route");
+      },
+    });
+    // More than a day's worth, none of them delivered.
+    for (let i = 0; i < 25; i++) {
+      assert.equal((await post(app, `message ${i}`)).status, 502);
+      time += 60e3;
+    }
+    down = false;
+    assert.equal((await post(app, "at last")).status, 202);
+    await app.close();
+    // Nothing sent today, nothing to give back.
+    const storage = memoryStorage();
+    await createHost(storage, () => time).unsent();
+    assert.equal((await storage.list({ prefix: "mail:" })).size, 0);
+  });
+
   test("forgets the key of a message that didn't go through, so sending it again sends it", async (t) => {
     stub(t, console, "error", () => {});
     let time = Date.parse("2026-10-06T20:00:00Z");

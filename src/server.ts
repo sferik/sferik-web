@@ -889,7 +889,7 @@ export interface Host {
   beat(token: string, page: Page): Promise<Who>;
   who(): Promise<Session[]>;
   mail(ip: string, key?: string): Promise<"ok" | "sent" | { why: "busy" | "full"; wait: number }>;
-  unsent(key: string): Promise<void>; // forget a key whose message didn't go through
+  unsent(key?: string): Promise<void>; // a message didn't go through: give back its place in the day's ration, and forget its key
 }
 // Where the host keeps its state: a Map for the Node server, a Durable
 // Object's storage on Workers.
@@ -981,7 +981,12 @@ export function createHost(storage: HostStorage, now: () => number = Date.now, l
       if (key) await storage.put(`key:${key}`, now());
       return "ok";
     },
-    unsent: async (key) => void (await storage.delete(`key:${key}`)),
+    async unsent(key) {
+      if (key) await storage.delete(`key:${key}`);
+      const day = `mail:${new Date(now()).toISOString().slice(0, 10)}`;
+      const count = await storage.get<number>(day);
+      if (count) await storage.put(day, count - 1);
+    },
   };
 }
 
@@ -1330,7 +1335,7 @@ export function createApp({
         await mail({ text, tty: tty && /^ttys\d{3}$/.test(tty) ? tty : null, replyTo: EMAIL.exec(text)?.[0] ?? null });
       } catch (err) {
         console.error(err);
-        if (key) await host.unsent(key);
+        await host.unsent(key);
         // In a minute, which is when the host takes another from this address.
         return say(502, "the message didn't go through; try again later", "undelivered", { "retry-after": String(MAIL_EVERY / 1000) });
       }
