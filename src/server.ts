@@ -1454,7 +1454,8 @@ export function createApp({
       const body = { commit, deployed, url: commit && `https://github.com/sferik/sferik-web/commit/${commit}` };
       return send(200, "application/json; charset=utf-8", JSON.stringify(body, null, 2) + "\n", { ...cors, "cache-control": "no-cache" });
     }
-    if (pathname === "/.signature") return send(200, "text/plain; charset=utf-8", signature((await read("profile")) as Profile), cors);
+    if (pathname === "/.signature")
+      return send(200, "text/plain; charset=utf-8", signature((await read("profile")) as Profile), { ...cors, "cache-control": "public, max-age=3600" });
     if (pathname === "/sitemap.xml") return send(200, "application/xml; charset=utf-8", SITEMAP, { "cache-control": "public, max-age=3600" });
     if (pathname === "/talks.atom") {
       return send(200, "application/atom+xml; charset=utf-8", talksFeed((await site.modules.talks()) as Talks), {

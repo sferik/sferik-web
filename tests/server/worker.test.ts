@@ -307,17 +307,20 @@ describe("the Worker", () => {
     assert.equal(on.headers.get("cache-control"), "public, max-age=5"); // and not for four hours
     assert.deepEqual(await on.json(), { users: [] });
     e.MBP.get = mbp;
-    // Not kept: what doesn't say, what says to check every time (but for a page), what's
-    // not acceptable, and what a POST says.
+    // And the motto, which changes only with a deploy, for the hour it says.
+    assert.equal((await get(e, "/.signature", "text/plain")).headers.get("cache-control"), "public, max-age=3600");
+    await Promise.all(waiting);
+    assert.equal(kept.size, 6);
+    // Not kept: what says to check every time (but for a page), what's not acceptable,
+    // and what a POST says.
     for (const [url, accept] of [
       ["/version", "application/json"],
-      ["/.signature", "text/plain"], // which doesn't say how long it's good for
       ["/whoami", "image/png"],
     ])
       await get(e, url, accept);
     await post(e, "/who?token=0123456789abcdef&page=/");
     await Promise.all(waiting);
-    assert.equal(kept.size, 5);
+    assert.equal(kept.size, 6);
     // What HEAD asks is answered from what GET kept, without the body, and keeps nothing itself.
     e.LIVE.get = () => Promise.reject(new Error("KV was read"));
     const head = await get(e, "/whoami", "application/json", "HEAD");
@@ -328,7 +331,7 @@ describe("the Worker", () => {
     e.LIVE.get = async () => null;
     assert.equal((await get(e, "/name", "application/json", "HEAD")).status, 200);
     await Promise.all(waiting);
-    assert.equal(kept.size, 5);
+    assert.equal(kept.size, 6);
   });
 
   test("gzips what Cloudflare sends as it is, for what takes gzip, on its way out and not in the cache", async (t) => {

@@ -461,6 +461,8 @@ describe("offline (snapshots from data/)", () => {
     const res = await app.get("/.signature");
     assert.match(res.type, /^text\/plain/);
     assert.equal(res.body, "I build libraries and tools software engineers depend on.\n");
+    // It changes only with a deploy, so it's good for an hour, to a cache and to a client that keeps what it's told.
+    assert.equal(res.headers.get("cache-control"), "public, max-age=3600");
   });
 
   test("responses have ETags, and asking with one gets 304 Not Modified", async () => {

@@ -211,7 +211,7 @@ const NONE = "none"; // for a response with no Cache-Control of its own
 const KEPT_AT = "x-kept-at"; // when a page was kept, in milliseconds
 const isPage = (response: Response) => response.headers.get("cache-control") === "no-cache" && /^text\/html\b/.test(response.headers.get("content-type")!);
 const keepable = (response: Response) =>
-  response.status === 404 || (response.status === 200 && (isPage(response) || /^public, max-age=[1-9]/.test(response.headers.get("cache-control") ?? "")));
+  response.status === 404 || (response.status === 200 && (isPage(response) || /^public, max-age=[1-9]/.test(String(response.headers.get("cache-control")))));
 function toKeep(response: Response, now: number): Response {
   const copy = new Response(response.body, response);
   copy.headers.set(OWN, response.headers.get("cache-control") ?? NONE);
