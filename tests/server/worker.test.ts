@@ -233,6 +233,19 @@ describe("the Worker", () => {
     assert.equal((await post(e, "/who?token=0123456789abcdef&page=/", undefined, "192.0.2.1")).status, 200);
   });
 
+  test("rations an IPv6 address as its network, so another address there is no way around a ration", async () => {
+    const e = env();
+    e.limited.add("2001:db8:1:2::/64");
+    const who = await post(e, "/who?token=0123456789abcdef&page=/", undefined, "2001:db8:1:2:aaaa::1");
+    assert.equal(who.status, 429);
+    assert.equal((await post(e, "/who?token=0123456789abcdef&page=/", undefined, "2001:db8:1:3::1")).status, 200);
+    // The Durable Object remembers who wrote the same way: one message a minute from a network.
+    assert.equal((await post(e, "/write", "hello", "2001:db8:9:9::1")).status, 202);
+    const again = await post(e, "/write", "hello again", "2001:db8:9:9:1234:5678:9abc:def0");
+    assert.deepEqual([again.status, e.sent.length], [429, 1]);
+    assert.equal((await post(e, "/write", "from elsewhere", "2001:db8:9:a::1")).status, 202);
+  });
+
   test("turns away a POST from another site's page, and takes one from its own", async () => {
     const e = env();
     const from = (origin: string) => post(e, "/who?token=0123456789abcdef&page=/", undefined, "192.0.2.1", { origin });

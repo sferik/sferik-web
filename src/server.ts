@@ -1035,6 +1035,26 @@ const UNDELIVERED = "the message didn't go through; try again later";
 // Durable Object forgets what's only in memory whenever it's been idle.
 export type Limit = (address: string) => Promise<boolean>;
 
+// Whose a request is, as the rations count it. An IPv4 address is one
+// reader's, near enough. An IPv6 address is one of the 2^64 in its network,
+// and whoever has one has them all: so it's the network that's rationed (its
+// first 64 bits), or a script would have a new address for every request.
+// An IPv4 address written as an IPv6 one (::ffff:192.0.2.1) is itself.
+export function whose(address: string): string {
+  if (!address.includes(":")) return address;
+  if (address.includes(".")) return address.slice(address.lastIndexOf(":") + 1);
+  // "::" stands for as many groups of zeros as make eight.
+  const [before, after] = address
+    .toLowerCase()
+    .split("::")
+    .map((part) => part.split(":").filter(Boolean));
+  const groups = [...before, ...Array<string>(Math.max(0, 8 - before.length - (after?.length ?? 0))).fill("0"), ...(after ?? [])];
+  return `${groups
+    .slice(0, 4)
+    .map((group) => group.replace(/^0+(?=.)/, ""))
+    .join(":")}::/64`;
+}
+
 export function createHost(storage: HostStorage, now: () => number = Date.now, limit?: Limit): Host {
   interface Tty {
     n: number;
@@ -1541,7 +1561,7 @@ export function createApp({
       const code = !/^[\w-]{16,64}$/.test(token) ? "bad_token" : !PAGES_ON.includes(page) ? "bad_page" : null;
       if (code) return answer(400, "Bad Request: token and page are required\n", { error: "token and page are required", code });
       // A tab checks in once a minute; an address that does it much more than its tabs would is filling the list.
-      if (limit && !(await limit(String(req.socket.remoteAddress))))
+      if (limit && !(await limit(whose(String(req.socket.remoteAddress)))))
         return answer(
           429,
           "Too Many Requests: a check-in a minute is plenty\n",
@@ -1561,7 +1581,7 @@ export function createApp({
       const key = req.headers["idempotency-key"] as string | undefined;
       if (key !== undefined && !/^[\w-]{16,64}$/.test(key))
         return say(400, "that's no Idempotency-Key; try 16 to 64 letters, digits, hyphens, and underscores", "bad_key");
-      const ration = await host.mail(String(req.socket.remoteAddress), key);
+      const ration = await host.mail(whose(String(req.socket.remoteAddress)), key);
       if (ration === "sent") return say(202, "message sent to sferik"); // already, with this key
       if (ration !== "ok") {
         const message = {

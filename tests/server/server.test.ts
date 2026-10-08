@@ -16,6 +16,7 @@ import {
   letter,
   memoryStorage,
   asksFor,
+  whose,
   negotiate,
   nodeFiles,
   shade,
@@ -1568,6 +1569,25 @@ describe("who's logged in", () => {
     assert.deepEqual(JSON.parse(res.body), { error: "a check-in a minute is plenty", code: "busy" });
     assert.equal((await app.get("/who")).status, 200); // looking is free
     await app.close();
+  });
+
+  test("an IPv6 address is rationed as its network, the first 64 bits, and an IPv4 one as itself", () => {
+    assert.equal(whose("192.0.2.1"), "192.0.2.1");
+    assert.equal(whose("2001:db8:1:2:3:4:5:6"), "2001:db8:1:2::/64");
+    assert.equal(whose("2001:db8:1:2:ffff:ffff:ffff:ffff"), whose("2001:db8:1:2::1"));
+    assert.notEqual(whose("2001:db8:1:3::1"), whose("2001:db8:1:2::1"));
+    // However it's written: in capitals, with zeros in front, or with "::" for the zeros, wherever they are.
+    assert.equal(whose("2001:0DB8:0001:0002::1"), "2001:db8:1:2::/64");
+    assert.equal(whose("2001:db8::1"), "2001:db8:0:0::/64");
+    assert.equal(whose("2001:db8::1:2:3:4:5"), "2001:db8:0:1::/64");
+    assert.equal(whose("2001:db8:1:2::"), "2001:db8:1:2::/64");
+    assert.equal(whose("::1"), "0:0:0:0::/64");
+    assert.equal(whose("fe80::1%en0"), "fe80:0:0:0::/64");
+    // An IPv4 address written as an IPv6 one is the IPv4 address, not one of a network they'd all share.
+    assert.equal(whose("::ffff:192.0.2.1"), "192.0.2.1");
+    // And what's no address at all (a socket that has gone) is whatever it is, not an error.
+    assert.equal(whose("undefined"), "undefined");
+    assert.equal(whose("1:2:3:4:5:6:7:8:9"), "1:2:3:4::/64");
   });
 
   test("has room for a thousand terminals; after that, a tab can only look", async () => {

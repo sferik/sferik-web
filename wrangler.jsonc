@@ -71,7 +71,7 @@
     "bindings": [{ "name": "MBP", "class_name": "Mbp" }],
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Mbp"] }],
-  // Rations by address, counted at Cloudflare's edge for a minute and kept nowhere else: sixty check-ins (a tab
+  // Rations by address (an IPv6 one counts as its network: see whose in src/server.ts), counted at Cloudflare's edge for a minute and kept nowhere else: sixty check-ins (a tab
   // makes one a minute, and one more whenever it comes back into view), so a script can't fill the list of who's
   // on; and one of write's messages, which the Durable Object rations too, but only in memory, which it loses
   // whenever it's been idle. The namespace ids are ours to choose.
