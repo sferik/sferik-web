@@ -385,7 +385,7 @@ interface DataFiles {
 }
 type Read = <K extends keyof DataFiles>(name: K) => Promise<DataFiles[K]>;
 
-function createModules({ live, read }: { live: Live; read: Read }) {
+function createModules({ live, read, art }: { live: Live; read: Read; art: () => Promise<string> }) {
   async function projectsData(): Promise<Src> {
     const data = await read("projects");
     const [gems, stars] = await Promise.all([live.gems(), live.stars()]);
@@ -532,7 +532,8 @@ function createModules({ live, read }: { live: Live; read: Read }) {
             ...(t.video ? [`          video:  ${bare(t.video)}`] : []),
             ...(t.link ? [`          link:   ${bare(t.link)}`] : []),
           ]),
-        ...(limit === Infinity ? ["", "Podcasts:", ...podcastLines(m.podcasts)] : []),
+        // The few the home page shows end as they do there: with where the rest are.
+        ...(limit === Infinity ? ["", "Podcasts:", ...podcastLines(m.podcasts)] : ["", `All talks at sferik.net/talks. Slides are on ${bare(m.speakerDeck)}.`]),
       ].join("\n"),
     finger: (m) => {
       const width = Math.max(...m.profiles.map((p) => p.network.length)) + 2;
@@ -560,16 +561,9 @@ function createModules({ live, read }: { live: Live; read: Read }) {
   // resource's JSON, by URL), it's rendered from that, not built again.
   async function homeText(built: Record<string, unknown> = {}) {
     const data = (built["/"] as Home | undefined) ?? (await home());
-    const inner = WIDTH - 4;
-    const line = (s: string) => `│ ${s.padEnd(inner)} │`;
-    const box = [
-      `╭${"─".repeat(WIDTH - 2)}╮`,
-      line(data.profile.name),
-      line(data.profile.location),
-      line(""),
-      line(data.profile.tagline),
-      `╰${"─".repeat(WIDTH - 2)}╯`,
-    ];
+    // It opens as the page does: with two commands that have run, figlet
+    // sferik.net and cat .signature (the motto).
+    const banner = [`${PROMPT}figlet sferik.net`, await art(), "", `${PROMPT}cat .signature`, ...wrap(data.profile.tagline)];
     const parts = await Promise.all(
       HOME.map(async (id) => {
         const m = (built[`/${id}`] as Modules[ModuleId] | undefined) ?? (await modules[id]());
@@ -577,7 +571,7 @@ function createModules({ live, read }: { live: Live; read: Read }) {
         return `${PROMPT}${command}\n${id === "talks" ? text.talks(m as Talks, 6) : (text[id] as (m: unknown) => string)(m)}`;
       }),
     );
-    return [...box, "", parts.join("\n\n"), "", `${PROMPT}curl sferik.net/resume`, ""].join("\n");
+    return [...banner, "", parts.join("\n\n"), "", `${PROMPT}curl sferik.net/resume`, ""].join("\n");
   }
 
   return { modules, text, home, homeText, podcasts, podcastsText, resume: () => read("resume") };
@@ -887,12 +881,16 @@ export function talksFeed(m: Talks): string {
 // commands that have already run, figlet sferik.net and cat .signature
 // (the motto). The commands after them play out; these don't, so the
 // page opens with something to see.
-export function banner(p: Profile, font: Font): string {
-  const [locality, region] = p.location.split(", ");
-  const art = figletLines(font, "sferik.net", 80, "smush")[0]
+// What figlet sferik.net prints, which the home page opens with, as a page and as text.
+export const figletArt = (font: Font): string =>
+  figletLines(font, "sferik.net", WIDTH, "smush")[0]
     .map((line) => line.trimEnd())
     .join("\n")
     .trimEnd(); // no blank descender row
+
+export function banner(p: Profile, font: Font): string {
+  const [locality, region] = p.location.split(", ");
+  const art = figletArt(font);
   const ps1 = (id: string, command: string, arg: string) =>
     `<h2 class="ps1" id="${id}"><span class="prompt" aria-hidden="true"><span class="ps-user">sferik</span>@mbp <span class="ps-cwd">~</span>&gt; </span>${command} <span class="arg">${arg}</span></h2>`;
   return [
@@ -1402,12 +1400,16 @@ export function createApp({
     repos: (await read("projects")).projects.map((p) => p.repo).filter(Boolean) as string[],
     email: (await read("profile")).email,
   });
-  const site = createModules({ live: createLive({ fetch, offline, now, timeout, token, store, refresh, about }), read });
+  const figletFont = async () => (font ??= parseFont(new TextDecoder().decode(await asset("share/standard.flf"))));
+  const site = createModules({
+    live: createLive({ fetch, offline, now, timeout, token, store, refresh, about }),
+    read,
+    art: async () => figletArt(await figletFont()),
+  });
   // A page's scripts and style, at the deployed commit's URLs. With no commit
   // (bun start), they stay where they are, and are checked on every load.
   const prefix = version.commit ? `/v/${version.commit}` : "";
   const versioned = (page: string) => page.replace(LINKED, prefix);
-  const figletFont = async () => (font ??= parseFont(new TextDecoder().decode(await asset("share/standard.flf"))));
 
   // Each resource's representations beyond html. Only the resume has LaTeX and
   // PDF, and only finger a contact card. A page that has built its resources'

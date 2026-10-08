@@ -195,7 +195,20 @@ describe("offline (snapshots from data/)", () => {
 
     const text = await app.get("/");
     assert.match(text.type, /^text\/plain/);
-    assert.match(text.body, /^╭─+╮\n│ Erik Berlin +│/);
+    // It opens as the page does: figlet sferik.net, then the motto, as cat .signature.
+    const ART = [
+      "       __           _ _                 _",
+      "  ___ / _| ___ _ __(_) | __  _ __   ___| |_",
+      " / __| |_ / _ \\ '__| | |/ / | '_ \\ / _ \\ __|",
+      " \\__ \\  _|  __/ |  | |   < _| | | |  __/ |_",
+      " |___/_|  \\___|_|  |_|_|\\_(_)_| |_|\\___|\\__|",
+    ].join("\n");
+    const opening = `sferik@mbp ~> figlet sferik.net\n${ART}\n\nsferik@mbp ~> cat .signature\nI build libraries and tools software engineers depend on.\n\nsferik@mbp ~> whoami\n`;
+    assert.equal(text.body.slice(0, opening.length), opening);
+    // And its few talks end as they do there, with where the rest are, which all of them don't.
+    assert.match(text.body, /\n\nAll talks at sferik\.net\/talks\. Slides are on speakerdeck\.com\/sferik\.\n\nsferik@mbp ~> finger sferik\n/);
+    assert.doesNotMatch((await app.get("/talks")).body, /All talks at/);
+    for (const line of text.body.split("\n")) assert.ok(line.length <= 80, line);
     assert.match(text.body, /sferik@mbp ~> whoami\nI've spent nearly two decades/);
     assert.match(text.body, /sferik@mbp ~> imgcat ~\/dependency\.webp\n\[A tall, precarious tower/);
     assert.match(text.body, /sferik@mbp ~> ls -t ~\/talks \| head -6\nNov 2015 {2}The Value of Being Lazy/);
@@ -450,7 +463,10 @@ describe("offline (snapshots from data/)", () => {
       const text = (await app.get(url)).body;
       assert.equal(pre[1], text.trimEnd().replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"), url);
     }
-    assert.match((await app.get("/", { accept: HTML })).body, /<pre>╭─+╮\n│ Erik Berlin +│[^]*sferik@mbp ~&gt; whoami\nI've spent nearly two decades/);
+    assert.match(
+      (await app.get("/", { accept: HTML })).body,
+      /<pre>sferik@mbp ~&gt; figlet sferik\.net\n {7}__ [^]*sferik@mbp ~&gt; cat \.signature\n[^]*sferik@mbp ~&gt; whoami\nI've spent nearly two decades/,
+    );
   });
 
   test("a page builds each resource once, for its JSON and its text alike", async () => {
