@@ -280,6 +280,13 @@ describe("offline (snapshots from data/)", () => {
     assert.match((await app.get("/resume/", { accept: JSON_ })).body, /"basics"/);
   });
 
+  test("a path that starts with two slashes is a path, not a host and the path after it", async () => {
+    assert.match((await app.get("//", { accept: JSON_ })).body, /"profile"/);
+    const whoami = await app.get("//whoami", { accept: JSON_ });
+    assert.deepEqual([whoami.status, JSON.parse(whoami.body)], [404, { error: "Not Found", code: "not_found", path: "//whoami" }]);
+    assert.equal((await app.get("//example.com/whoami?x=1")).body, "cd: The directory '//example.com/whoami' does not exist\n");
+  });
+
   test("406 when nothing acceptable", async () => {
     const res = await app.get("/resume", { accept: "image/png" });
     assert.equal(res.status, 406);

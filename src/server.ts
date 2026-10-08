@@ -1352,7 +1352,9 @@ export function createApp({
         "access-control-allow-headers": "accept, if-none-match",
       });
     }
-    const url = new URL(req.url!, "http://localhost");
+    // A path that starts with two slashes is still a path. A URL that starts with them names a host next, so
+    // //whoami was the home page on a host called whoami, and // alone was no URL at all.
+    const url = new URL(req.url!.replace(/^\/\//, "http://localhost//"), "http://localhost");
     // A path that isn't properly percent-encoded (/%E0%A4%A) can't be decoded: that's the client's mistake.
     let pathname: string;
     try {
