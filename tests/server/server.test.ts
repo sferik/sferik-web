@@ -1064,8 +1064,7 @@ describe("live data", () => {
     let clock = Date.parse("2026-10-08T12:00:00.250Z");
     let answer: () => Response = () => Response.json(answered());
     const app = await serve({ fetch: fakeNet({ "https://api.github.com/graphql": async () => answer() }).fetch, token: "secret", now: () => clock });
-    assert.deepEqual(await statusOf(app), { asked: null, answered: null, error: null }); // not yet
-    await graphOf(app);
+    // Asking is what loads the numbers here, so GitHub has been asked by the time this says.
     assert.deepEqual(await statusOf(app), { asked: "2026-10-08T12:00:00Z", answered: "2026-10-08T12:00:00Z", error: null });
     // The token expires. The numbers still come, the other way: only this says that they do.
     answer = () => new Response("", { status: 401 });
@@ -1081,6 +1080,46 @@ describe("live data", () => {
     await graphOf(app);
     assert.deepEqual(await statusOf(app), { asked: "2026-10-08T14:00:00Z", answered: "2026-10-08T14:00:00Z", error: null });
     await app.close();
+  });
+
+  test("/status says when each live value was last loaded, the stars and the last push too", async (t) => {
+    stub(t, console, "error", () => {});
+    const loadedOf = async (app: App) => (JSON.parse((await app.get("/status")).body) as { loaded: Record<string, string | null> }).loaded;
+    const never = { gems: null, stars: null, contributions: null, push: null };
+    // Offline, nothing is ever loaded.
+    const offline = await serve({ offline: true });
+    assert.deepEqual(await loadedOf(offline), never);
+    await offline.close();
+
+    // Asking loads each one, where they're loaded when they're asked for: none is unloaded for want of asking.
+    let clock = Date.parse("2026-10-08T12:00:00.250Z");
+    let stars = 200;
+    const net = fakeNet({ "https://api.github.com/users/sferik/events/public?per_page=100": () => new Response("", { status: stars }) });
+    const starred = (async (input: string | URL | Request, init?: RequestInit) =>
+      String(input).startsWith("https://api.github.com/repos/") && stars !== 200
+        ? new Response("", { status: stars })
+        : net.fetch(input, init)) as typeof globalThis.fetch;
+    const app = await serve({ fetch: starred, now: () => clock });
+    // The last push has never loaded (GitHub's events have failed from the start), which this alone says.
+    assert.deepEqual(await loadedOf(app), { gems: "2026-10-08T12:00:00Z", stars: "2026-10-08T12:00:00Z", contributions: "2026-10-08T12:00:00Z", push: null });
+    // Six hours on, the stars are due again, and GitHub won't count them: they're what they were, as of then.
+    stars = 403;
+    clock += 6 * 3600e3;
+    await loadedOf(app); // sends what it had, and loads again
+    await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual(await loadedOf(app), { gems: "2026-10-08T18:00:00Z", stars: "2026-10-08T12:00:00Z", contributions: "2026-10-08T18:00:00Z", push: null });
+    await app.close();
+
+    // With a store, a refresh notes when it loaded each, and the requests that read it say so.
+    const saved = new Map<string, unknown>();
+    const store = { get: async (key: string) => saved.get(key), put: async (key: string, value: unknown) => void saved.set(key, value) };
+    const reader = await serve({ fetch: () => assert.fail("a request asked"), store });
+    assert.deepEqual(await loadedOf(reader), never);
+    const refresher = await serve({ fetch: fakeNet().fetch, store, refresh: true, now: () => Date.parse("2026-10-08T12:15:00Z") });
+    await refresher.get("/src", { accept: JSON_ });
+    await refresher.close();
+    assert.deepEqual(await loadedOf(reader), { gems: "2026-10-08T12:15:00Z", stars: "2026-10-08T12:15:00Z", contributions: null, push: null });
+    await reader.close();
   });
 
   test("with a store, a refresh notes what became of asking GitHub with the token, for the requests that read it", async (t) => {

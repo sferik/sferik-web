@@ -132,7 +132,9 @@ GitHub is down, responses fall back to the snapshots in `data/`. `/contributions
 
 When GitHub's one request fails, the numbers still come, the other ways: so `/status` says what became of it, which nothing else would outside the log.
 `github.asked` is when GitHub was last asked with the token, `github.answered` when it last answered, and `github.error` what went wrong if it didn't (a
-token that has expired, say). Each is null without a token.
+token that has expired, say). Each is null without a token. And `loaded` is when each live value was last loaded (`gems`, `stars`, `contributions`, and
+`push`), or null for one that never has been: `/src` and `/contributions` say so of the downloads and the contributions alone, so stars or a latest push
+that had stopped being refreshed would otherwise say so nowhere.
 
 ### Who's on, and write
 

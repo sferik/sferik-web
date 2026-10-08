@@ -14,7 +14,7 @@
  * from RubyGems and GitHub on the server, cached, and fall back to the
  * snapshots in data/ when those services are slow or down. /status says
  * whether GitHub answers with the server's token, since the numbers come
- * without it too.
+ * without it too, and when each of them was last loaded.
  *
  * No dependencies: node src/server.ts (Node strips the types), then open
  * http://localhost:3745. The same app runs on Cloudflare Workers (src/worker.ts),
@@ -153,6 +153,9 @@ interface Entry {
   pending?: Promise<unknown> | null;
 }
 export type Live = ReturnType<typeof createLive>;
+// The live values, by the names they're kept under.
+const VALUES = ["gems", "stars", "contributions", "push"] as const;
+type Value = (typeof VALUES)[number];
 
 function createLive({ fetch, offline, now, timeout, token, store, refresh, about }: LiveOptions) {
   const cache = new Map<string, Entry>();
@@ -361,17 +364,27 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh, about
     if (!ev) throw new Error("GitHub: no push in the latest events");
     return { repo: ev.repo.name, sha: ev.payload!.head!, at: ev.created_at };
   };
-  const loaded = async (key: "gems" | "contributions") => (store ? ((await store.get(`at:${key}`)) as number | undefined) : cache.get(key)?.loaded);
+  const loaded = async (key: Value) => (store ? ((await store.get(`at:${key}`)) as number | undefined) : cache.get(key)?.loaded);
+  // When a value was last loaded, if it has been.
+  const at = async (key: Value): Promise<string | undefined> => {
+    const when = await loaded(key);
+    return when === undefined ? undefined : seconds(new Date(when));
+  };
   return {
-    // When a value was last loaded, if it has been: what it's in says so (asOf).
-    async at(key: "gems" | "contributions"): Promise<string | undefined> {
-      const at = await loaded(key);
-      return at === undefined ? undefined : seconds(new Date(at));
+    // What it's in says so (asOf).
+    at,
+    // When each value was last loaded, or null for one that never has been
+    // (/status says). What they're in says so of the downloads and the
+    // contributions alone (asOf, and live): the stars and the last push could
+    // be days old, and nothing else would say that they are.
+    async loaded(): Promise<Record<Value, string | null>> {
+      const times = await Promise.all(VALUES.map(async (key) => [key, (await at(key)) ?? null] as const));
+      return Object.fromEntries(times) as Record<Value, string | null>;
     },
     // Whether a value is live: loaded, and within the last two hours. Each is
     // loaded again within one, so one that's older has failed to be, more than
     // once, and is the last that was known, not what's so now.
-    async fresh(key: "gems" | "contributions"): Promise<boolean> {
+    async fresh(key: Value): Promise<boolean> {
       return now() - ((await loaded(key)) ?? -Infinity) < 2 * HOUR;
     },
     // What became of asking GitHub with the token: when it was last asked,
@@ -1680,9 +1693,12 @@ export function createApp({
       const body = { commit, deployed, url: commit && `https://github.com/sferik/sferik-web/commit/${commit}` };
       return send(200, "application/json; charset=utf-8", JSON.stringify(body, null, 2) + "\n", { ...cors, "cache-control": "no-cache" });
     }
-    // Whether the live numbers come the way they should: GitHub's, with the token (see createLive).
+    // Whether the live numbers come the way they should: GitHub's, with the token (see createLive), and when
+    // each was last loaded. Each is asked for first, as whatever shows it would: so where they're loaded when
+    // they're asked for (the Node server), what's due is loaded, and none is unloaded only for want of asking.
     if (pathname === "/status") {
-      const body = { github: await live.token() };
+      await Promise.all([live.gems(), live.stars(), live.contributions(), live.lastPush()]);
+      const body = { github: await live.token(), loaded: await live.loaded() };
       return send(200, "application/json; charset=utf-8", JSON.stringify(body, null, 2) + "\n", { ...cors, "cache-control": LIVE_FOR });
     }
     if (pathname === "/.signature")

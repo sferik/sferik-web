@@ -188,10 +188,14 @@ describe("the Worker", () => {
       String(input) === "https://api.github.com/graphql" ? new Response("", { status: 401 }) : upstream(input)) as typeof globalThis.fetch;
     stub(t, globalThis, "fetch", expired);
     const e = { ...env(), GITHUB_TOKEN: "secret" };
-    assert.deepEqual(await json(e, "/status"), { github: { asked: null, answered: null, error: null } });
+    const never = { gems: null, stars: null, contributions: null, push: null };
+    assert.deepEqual(await json(e, "/status"), { github: { asked: null, answered: null, error: null }, loaded: never });
     await worker.scheduled(undefined, e);
-    const { github } = (await json(e, "/status")) as { github: { asked: string; answered: null; error: string } };
+    const { github, loaded } = (await json(e, "/status")) as { github: { asked: string; answered: null; error: string }; loaded: Record<string, string> };
     assert.ok(Date.now() - Date.parse(github.asked) < 60e3);
+    // And when each value was loaded: every one, by the refresh.
+    assert.deepEqual(Object.keys(loaded), ["gems", "stars", "contributions", "push"]);
+    for (const at of Object.values(loaded)) assert.ok(Date.now() - Date.parse(at) < 60e3);
     assert.deepEqual([github.answered, github.error], [null, "https://api.github.com/graphql: 401"]);
     // The numbers came all the same, the other ways.
     assert.equal(((await json(e, "/contributions")) as { live: boolean }).live, true);
