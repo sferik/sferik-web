@@ -1365,6 +1365,8 @@ export function createApp({
         ...cors,
         "access-control-allow-methods": "GET, HEAD, OPTIONS",
         "access-control-allow-headers": "accept, if-none-match",
+        // For a day, or as much of one as a browser allows: without this, it asks again every five seconds.
+        "access-control-max-age": "86400",
       });
     }
     // A path that starts with two slashes is still a path. A URL that starts with them names a host next, so

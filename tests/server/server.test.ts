@@ -709,6 +709,8 @@ describe("offline (snapshots from data/)", () => {
     assert.equal(options.status, 204);
     assert.equal(options.headers.get("access-control-allow-origin"), "*");
     assert.equal(options.headers.get("access-control-allow-headers"), "accept, if-none-match");
+    // And the browser needn't ask again for a day.
+    assert.equal(options.headers.get("access-control-max-age"), "86400");
     // A page on another origin may read the ETag, and how long to wait.
     assert.equal(head.headers.get("access-control-expose-headers"), "ETag, Retry-After");
     const post = await app.get("/resume", { method: "POST" });
