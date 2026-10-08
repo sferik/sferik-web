@@ -712,6 +712,16 @@ async function buildResume(main: HTMLElement) {
   );
 }
 
+// What the address links to, by its id: the part after the #, which needn't
+// be an id here, or a CSS selector at all (#1, #/talks), or even decode (#%E0).
+function linkedTo(): HTMLElement | null {
+  try {
+    return document.getElementById(decodeURIComponent(location.hash.slice(1)));
+  } catch {
+    return null;
+  }
+}
+
 const main = $("main[data-page]");
 // A link that runs a command (shell.ts) skips the playback, to show it.
 const linked = new URLSearchParams(location.search).has("run");
@@ -722,7 +732,7 @@ export const ready: Promise<unknown> = main
       .then(() => {
         const play = main.dataset.page === "home" && !reduceMotion && !linked ? session(main) : null;
         main.removeAttribute("aria-busy");
-        if (location.hash) $(location.hash)?.scrollIntoView();
+        linkedTo()?.scrollIntoView();
         play?.();
         paneTitle(main);
         const beat = () => void (document.visibilityState === "visible" && checkIn().catch(() => {}));

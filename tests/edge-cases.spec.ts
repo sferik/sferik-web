@@ -44,6 +44,18 @@ test.describe("startup", () => {
     await expect(page.locator("[data-scroller]")).not.toBeFocused();
   });
 
+  for (const hash of ["#1", "#/talks", "#a=b", "#%E0", "#nothing-here"]) {
+    test(`a link to ${hash}, which is no part of the page (or no id, or selector, at all), still builds it`, async ({ page }) => {
+      const errors: string[] = [];
+      page.on("pageerror", (e) => errors.push(e.message));
+      await page.goto(`/${hash}`);
+      await shell(page).fill("echo built");
+      await shell(page).press("Enter");
+      await expect(page.locator(".repl-log")).toContainText("built");
+      expect(errors).toEqual([]);
+    });
+  }
+
   test("the 404 page keeps focus in its shell", async ({ page }) => {
     await page.goto("/missing");
     await expect(shell(page)).toBeFocused();
