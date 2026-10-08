@@ -168,16 +168,18 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh, about
     }
   }
 
-  // GitHub's GraphQL API, which answers only with a token. An answer with
-  // errors has failed, whatever its status says.
-  async function graphql<T>(query: string, wait: number): Promise<T> {
-    const { data, errors } = await getJSON<{ data?: T; errors?: { message: string }[] }>(
+  // GitHub's GraphQL API, which answers only with a token. An answer may
+  // have errors and data both, whatever its status says: what it couldn't
+  // answer is null in the data, and why is among the errors. One with no data
+  // at all has failed.
+  async function graphql<T>(query: string, wait: number): Promise<{ data: T; errors: string[] }> {
+    const { data, errors = [] } = await getJSON<{ data?: T | null; errors?: { message: string }[] }>(
       "https://api.github.com/graphql",
       { method: "POST", body: JSON.stringify({ query }) },
       wait,
     );
-    if (!data || errors?.length) throw new Error(`GitHub: ${errors?.[0].message ?? "no data"}`);
-    return data;
+    if (!data) throw new Error(`GitHub: ${errors[0]?.message ?? "no data"}`);
+    return { data, errors: errors.map((error) => error.message) };
   }
 
   // Everything GitHub is asked for, in one request, with a token: a year of
@@ -189,6 +191,13 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh, about
   // pushed. So it's when the commit was made, which is when it was pushed, or
   // near enough.
   //
+  // GitHub may answer some of it and not the rest: an organization can turn a
+  // token away that the others take, and then its repositories are null in
+  // the answer. What's there is used (a project without its stars keeps the
+  // snapshot's), and what isn't is said, since nothing else would say it. With
+  // no calendar, though, the answer has failed, and each is asked for the
+  // other way.
+  //
   // It's three requests' worth of answer, and takes about as long as the
   // three would one after another, so it's given three times as long. The
   // three are asked for at different times, each when it's due, so one that's
@@ -199,12 +208,15 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh, about
     stars: Record<string, number>;
     push?: Push;
   }
-  type Repositories = { nameWithOwner: string; defaultBranchRef: { target: { history: { nodes: { oid: string; committedDate: string }[] } } } | null }[];
+  type Repositories = ({
+    nameWithOwner: string;
+    defaultBranchRef: { target: { history: { nodes: { oid: string; committedDate: string }[] } } } | null;
+  } | null)[];
   type Answered = {
     user: {
-      contributionsCollection: { contributionCalendar: { weeks: { contributionDays: { date: string; contributionCount: number }[] }[] } };
-      repositories: { nodes: Repositories };
-    };
+      contributionsCollection: { contributionCalendar: { weeks: { contributionDays: { date: string; contributionCount: number }[] }[] } } | null;
+      repositories: { nodes: Repositories } | null;
+    } | null;
   };
   const everything = (repos: string[], email: string) => {
     const stars = repos.map((repo, i) => {
@@ -219,19 +231,20 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh, about
   // The latest of sferik's commits among the repositories. (The times are all written the same way, so the later is the greater.)
   const latest = (repositories: Repositories): Push | undefined =>
     repositories
-      .flatMap((r) => (r.defaultBranchRef?.target.history.nodes ?? []).map((c): Push => ({ repo: r.nameWithOwner, sha: c.oid, at: c.committedDate })))
+      .flatMap((r) => (r?.defaultBranchRef?.target.history.nodes ?? []).map((c): Push => ({ repo: r!.nameWithOwner, sha: c.oid, at: c.committedDate })))
       .reduce<Push | undefined>((last, push) => (last && last.at >= push.at ? last : push), undefined);
   let asked: { at: number; answer: Promise<GitHub> } | undefined;
   function github(): Promise<GitHub> {
     if (!asked || now() - asked.at >= 60e3) {
       const answer = about().then(async ({ repos, email }): Promise<GitHub> => {
-        const data = await graphql<Answered & Record<string, { stargazerCount: number }>>(everything(repos, email), 3 * timeout);
+        const { data, errors } = await graphql<Answered & Record<string, { stargazerCount: number } | null>>(everything(repos, email), 3 * timeout);
+        const calendar = data.user?.contributionsCollection?.contributionCalendar;
+        if (!calendar) throw new Error(`GitHub: ${errors[0] ?? "no calendar"}`);
+        if (errors.length) console.error("GitHub, with the token, answered only in part:", ...new Set(errors));
         return {
-          days: data.user.contributionsCollection.contributionCalendar.weeks.flatMap((week) =>
-            week.contributionDays.map((day) => ({ date: day.date, count: day.contributionCount, level: 0 })),
-          ),
-          stars: Object.fromEntries(repos.map((repo, i) => [repo, data[`r${i}`].stargazerCount])),
-          push: latest(data.user.repositories.nodes),
+          days: calendar.weeks.flatMap((week) => week.contributionDays.map((day) => ({ date: day.date, count: day.contributionCount, level: 0 }))),
+          stars: Object.fromEntries(repos.flatMap((repo, i) => (data[`r${i}`] ? [[repo, data[`r${i}`]!.stargazerCount]] : []))),
+          push: latest(data.user!.repositories?.nodes ?? []),
         };
       });
       // With a token, GitHub is asked this way first, and the other ways if it

@@ -967,7 +967,9 @@ describe("live data", () => {
     for (const [answer, why] of [
       [{ errors: [{ message: "rate limited" }] }, "rate limited"],
       [{}, "no data"],
-      [{ ...answered(), errors: [{ message: "rate limited" }] }, "rate limited"], // some of an answer, and an error: not an answer
+      [{ data: null, errors: [{ message: "rate limited" }] }, "rate limited"],
+      [{ data: { user: null } }, "no calendar"],
+      [{ data: { user: { contributionsCollection: null } }, errors: [{ message: "forbidden" }] }, "forbidden"], // some of an answer, without the calendar
     ] as const) {
       said.length = 0;
       const net = fakeNet({ "https://api.github.com/graphql": async () => Response.json(answer) });
@@ -982,6 +984,37 @@ describe("live data", () => {
       );
       await app.close();
     }
+  });
+
+  test("with a token, what GitHub answers is used when it can't answer it all, and what it couldn't is said", async (t) => {
+    const said: unknown[][] = [];
+    stub(t, console, "error", (...args: unknown[]) => void said.push(args));
+    // An organization that turns the token away: its repositories are null, wherever they are in the answer.
+    const forbidden = "The 'lostisland' organization forbids access via a fine-grained personal access tokens";
+    const at = REPOS.indexOf("lostisland/faraday_middleware");
+    const whole = answered([null as unknown as object, { nameWithOwner: "sferik/sferik-web", defaultBranchRef: commit("9fe89a4", "2026-10-08T12:36:34Z") }]);
+    const answer = { data: { ...whole.data, [`r${at}`]: null }, errors: [{ message: forbidden }, { message: forbidden }] };
+    const net = fakeNet({ "https://api.github.com/graphql": async () => Response.json(answer) });
+    const app = await serve({ fetch: net.fetch, token: "secret" });
+    const graph = await graphOf(app);
+    assert.deepEqual([graph.total, graph.lastPush?.sha], [7, "9fe89a4"]);
+    const all = await projectsOf(app);
+    // The project whose stars it couldn't say keeps the snapshot's, and the rest have theirs.
+    assert.deepEqual(
+      [starsOf(all, "faraday_middleware"), starsOf(all, "multi_json")],
+      [snapshot("faraday_middleware").stars, 100 + REPOS.indexOf("sferik/multi_json")],
+    );
+    assert.deepEqual(
+      net.calls.filter((c) => /github/.test(c.url)).map((c) => c.url),
+      ["https://api.github.com/graphql"],
+    );
+    assert.deepEqual(said, [["GitHub, with the token, answered only in part:", forbidden]]);
+    await app.close();
+    // Without the repositories last pushed to, the last push is asked for the other way.
+    const pushless = { data: { ...whole.data, user: { ...whole.data.user, repositories: null } }, errors: [{ message: forbidden }] };
+    const other = await serve({ fetch: fakeNet({ "https://api.github.com/graphql": async () => Response.json(pushless) }).fetch, token: "secret" });
+    assert.equal((await graphOf(other)).lastPush?.sha, "abc1234def5678");
+    await other.close();
   });
 
   test("GitHub's one answer is for whatever asks within a minute, and is given three times as long as another request", async () => {
