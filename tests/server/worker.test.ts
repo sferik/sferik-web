@@ -337,7 +337,8 @@ describe("the Worker", () => {
     const cache = {
       async match(request: Request) {
         const found = kept.get(request.url)?.clone();
-        const same = found && request.headers.get("if-none-match") === found.headers.get("etag");
+        // A weak tag (W/) matches the one it was made from, as it does for Cloudflare's.
+        const same = found && request.headers.get("if-none-match")?.replace(/^W\//, "") === found.headers.get("etag");
         return same ? new Response(null, { status: 304, headers: found.headers }) : found;
       },
       put: async (request: Request, response: Response) => void kept.set(request.url, response),
@@ -375,6 +376,10 @@ describe("the Worker", () => {
     const again = await ask("/talks.atom", "*/*", "br, gzip");
     assert.equal(again.headers.get("content-encoding"), "gzip");
     assert.equal(again.headers.get("vary"), "Accept-Encoding");
+    // Its tag is a weak one, since it's not byte for byte what the tag was made from: what's sent as it is keeps that.
+    const strong = (await ask("/talks.atom", "*/*", "")).headers.get("etag")!;
+    assert.match(strong, /^"[\da-f]+-[\da-f]+"$/);
+    assert.equal(again.headers.get("etag"), `W/${strong}`);
     assert.match(await again.text(), /^<\?xml/);
     assert.equal((await ask("/resume", "application/pdf", "gzip")).headers.get("vary"), "Accept, Accept-Encoding");
 
@@ -384,7 +389,20 @@ describe("the Worker", () => {
     // Nor for what Cloudflare compresses itself, or what isn't a 200.
     assert.equal(await encoding("/talks", "application/json", "gzip"), null);
     assert.equal(await encoding("/.well-known/webfinger?resource=acct:nobody@example.com", "*/*", "gzip"), null);
-    const tag = (await ask("/openapi.json", "*/*", "")).headers.get("etag")!;
+    // Asked for again with the weak tag, from the cache or (the first time, for the contact card by its suffix) the app.
+    const tag = (await ask("/openapi.json", "*/*", "gzip")).headers.get("etag")!;
+    assert.match(tag, /^W\//);
+    const first = await worker.fetch(
+      Object.assign(
+        new Request("https://sferik.net/finger.vcf", { headers: { "if-none-match": `W/${(await ask("/finger", "text/vcard", "")).headers.get("etag")}` } }),
+        {
+          cf: { clientAcceptEncoding: "gzip" },
+        },
+      ),
+      e,
+      CTX,
+    );
+    assert.equal(first.status, 304);
     const unchanged = await worker.fetch(
       Object.assign(new Request("https://sferik.net/openapi.json", { headers: { "if-none-match": tag } }), { cf: { clientAcceptEncoding: "gzip" } }),
       e,

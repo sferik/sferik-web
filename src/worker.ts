@@ -256,6 +256,9 @@ export interface Context {
 // to what takes gzip, which isn't what the request's Accept-Encoding says
 // here (Cloudflare has put its own there) but what it said when it arrived:
 // curl, which asks for no encoding unless it's told to, gets the PDF as it is.
+// Compressed, a response isn't byte for byte the one its ETag names, so the
+// tag is a weak one (W/), as Cloudflare makes it for what it compresses itself:
+// asked for again with that, what hasn't changed is still a 304.
 const UNCOMPRESSED = /^(?:application\/(?:openapi\+json|jrd\+json|atom\+xml|x-latex|pdf)|text\/vcard)\b/;
 function compressed(response: Response, request: Request): Response {
   const plain = response.status !== 200 || !UNCOMPRESSED.test(response.headers.get("content-type")!);
@@ -263,6 +266,7 @@ function compressed(response: Response, request: Request): Response {
   if (plain || !/\bgzip\b/.test(takes)) return response;
   const out = new Response(response.body, response);
   out.headers.set("content-encoding", "gzip");
+  out.headers.set("etag", `W/${response.headers.get("etag")}`);
   out.headers.append("vary", "Accept-Encoding");
   return out;
 }
