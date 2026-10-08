@@ -25,7 +25,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { EmailMessage } from "cloudflare:email";
 import { DurableObject } from "cloudflare:workers";
-import { asksFor, createApp, createHost, letter, type Files, type Host, type HostStorage, type Letter, type Limit, type Store } from "./server.ts";
+import { asksFor, createApp, createHost, has, letter, type Files, type Host, type HostStorage, type Letter, type Limit, type Store } from "./server.ts";
 import type { Page } from "./types.js";
 import contributions from "../data/contributions.json" with { type: "json" };
 import dependency from "../data/dependency.json" with { type: "json" };
@@ -326,20 +326,25 @@ async function respond(request: Request, env: Env, ctx: Context): Promise<Respon
   if (!kept) return answer(request);
   const now = Date.now();
   if (!old(kept, now)) return toSend(kept, request.method === "HEAD");
-  // A whole GET keeps what it's told, so one that insists is all the building there is to do.
-  const whole = request.method === "GET" && !tag;
-  if (insists(request) && whole) return answer(request);
+  // The response again, whole, whatever this request was (a HEAD, or one with If-None-Match): which is kept.
+  const headers = new Headers(request.headers);
+  headers.delete("if-none-match");
+  const again = () => answer(new Request(request.url, { headers }));
+  // One that insists waits for it, and is answered from it: that's all the building there is to do.
+  if (insists(request)) return asAsked(await again(), request);
   const marker = new Request(`${key}&building=1`);
   if (!begun(await cache!.match(marker), now)) {
-    // The response again, whole, whatever this request was: a HEAD, or one with If-None-Match.
-    const headers = new Headers(request.headers);
-    headers.delete("if-none-match");
     ctx.waitUntil(cache!.put(marker, building(now)));
-    ctx.waitUntil(answer(new Request(request.url, { headers })));
+    ctx.waitUntil(again());
   }
-  // One that insists, and isn't whole, is answered by the app as well: it says whether what the request has is
-  // still so (304), or sends no body (HEAD), of what's so now.
-  return insists(request) ? answer(request) : toSend(kept, request.method === "HEAD");
+  return toSend(kept, request.method === "HEAD");
+}
+
+// What a request is told of a response that was built whole: that it has that one already (304), if it names it
+// (If-None-Match), and nothing more than the headers if it's a HEAD.
+function asAsked(response: Response, request: Request): Response {
+  if (has(request.headers.get("if-none-match"), response.headers.get("etag"))) return new Response(null, { status: 304, headers: response.headers });
+  return request.method === "HEAD" ? new Response(null, response) : response;
 }
 
 export default {

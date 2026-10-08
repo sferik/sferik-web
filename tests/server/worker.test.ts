@@ -681,8 +681,8 @@ describe("the Worker", () => {
     await Promise.all(waiting);
     assert.equal(await downloads(await get(e, "/whoami", "application/json")), 9);
     assert.equal(read, 1);
-    // One that asks whether what it has is still so is told of what's so now, and so is a HEAD, while it's built
-    // again whole for the next to ask.
+    // One that asks whether what it has is still so is told of what's so now, and so is a HEAD: it's built once,
+    // whole, which answers the request and is kept for the next to ask.
     for (const [headers, method, status] of [
       [{ "if-none-match": now.headers.get("etag")! }, "GET", 304],
       [{ "if-none-match": '"another"' }, "GET", 200],
@@ -695,9 +695,10 @@ describe("the Worker", () => {
         [told.status, method === "HEAD" || status === 304 ? await told.text() : await downloads(told)],
         [status, status === 200 && method === "GET" ? 9 : ""],
       );
+      assert.equal(told.headers.get("cache-control"), "public, max-age=300");
       await Promise.all(waiting);
-      await Promise.all(waiting);
-      assert.equal(read, 2, `${method} ${status}`); // once for it, and once for the next
+      assert.equal(await downloads(await get(e, "/whoami", "application/json")), 9);
+      assert.equal(read, 1, `${method} ${status}`); // once, for it and for the next
     }
     // What changes only with a deploy is kept an hour past its own hour.
     await get(e, "/talks", "application/json");

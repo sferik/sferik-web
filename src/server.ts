@@ -1253,6 +1253,11 @@ export function etag(body: string | Uint8Array): string {
   return `"${(hash >>> 0).toString(16)}-${bytes.length.toString(16)}"`;
 }
 
+// Whether a request that names the versions it has (If-None-Match) has the
+// one a tag names. Proxies may weaken a tag (W/), which names the same one.
+export const has = (versions: string | null | undefined, tag: string | null): boolean =>
+  tag !== null && (versions ?? "").split(",").some((version) => version.trim().replace(/^W\//, "") === tag);
+
 // ------------------------------------------------------- negotiation
 
 // Pick a representation from an Accept header, among the formats a resource
@@ -1492,7 +1497,7 @@ export function createApp({
         /^(text\/|application\/[\w.+-]*(json|javascript|xml)|application\/(pdf|x-latex)|image\/svg)/.test(type) &&
         /\bgzip\b/.test(req.headers["accept-encoding"] ?? "");
       const tag = status === 200 ? etag(body).replace(/"$/, gzip ? '-gz"' : '"') : null;
-      const fresh = tag !== null && (req.headers["if-none-match"] ?? "").split(",").some((t) => t.trim().replace(/^W\//, "") === tag);
+      const fresh = has(req.headers["if-none-match"], tag);
       const encoding = gzip ? { "content-encoding": "gzip", vary: [extra.vary, "Accept-Encoding"].filter(Boolean).join(", ") } : {};
       res.writeHead(fresh ? 304 : status, { "content-type": type, ...SECURITY_HEADERS, ...extra, ...encoding, ...(tag && { etag: tag }) });
       res.end(req.method === "HEAD" || fresh ? undefined : gzip ? gzipSync(body) : body);
