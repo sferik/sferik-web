@@ -1061,7 +1061,7 @@ export interface Host {
 export interface HostStorage {
   get<T>(key: string): Promise<T | undefined>;
   put(key: string, value: unknown): Promise<void>;
-  delete(key: string): Promise<unknown>;
+  delete(keys: string | string[]): Promise<unknown>; // one key, or several at once: no more than FORGET_AT_ONCE
   list<T>(options: { prefix: string }): Promise<Map<string, T>>;
 }
 export const memoryStorage = (): HostStorage => {
@@ -1069,7 +1069,7 @@ export const memoryStorage = (): HostStorage => {
   return {
     get: async <T>(key: string) => map.get(key) as T | undefined,
     put: async (key, value) => void map.set(key, value),
-    delete: async (key) => map.delete(key),
+    delete: async (keys) => [keys].flat().map((key) => map.delete(key)),
     list: async <T>({ prefix }: { prefix: string }) => new Map([...map].filter(([key]) => key.startsWith(prefix))) as Map<string, T>,
   };
 };
@@ -1084,6 +1084,7 @@ const KEEP_KEYS = 864e5;
 // heard of again (delivered or unsent), so its key is free to be sent anew.
 const SENDING = 60e3;
 const ASK_AGAIN = 5; // seconds
+const FORGET_AT_ONCE = 128; // keys: the most a Durable Object's storage deletes in one call
 const UNDELIVERED = "the message didn't go through; try again later";
 
 // A ration by address that outlasts the host's memory: true if this one may
@@ -1128,25 +1129,18 @@ export function createHost(storage: HostStorage, now: () => number = Date.now, l
       kept = undefined; // to try again, the next time
       throw err;
     }));
-  async function ttys() {
-    const all = await stored();
-    for (const [key, t] of all)
-      if (now() - t.seen > LOGGED_IN) {
-        all.delete(key);
-        await storage.delete(key);
-      }
+  // Forget what has been kept long enough: from the map, and from storage, where that's one request for all of
+  // them (or for each 128), not one for each. So a morning's worth of terminals that have all gone is one
+  // delete, and when nothing has been kept long enough, which is most of the time, it's none.
+  async function forget<T>(all: Map<string, T>, old: (value: T) => boolean) {
+    const gone = [...all].filter(([, value]) => old(value)).map(([key]) => key);
+    for (const key of gone) all.delete(key);
+    for (let i = 0; i < gone.length; i += FORGET_AT_ONCE) await storage.delete(gone.slice(i, i + FORGET_AT_ONCE));
     return all;
   }
+  const ttys = async () => forget(await stored(), (t) => now() - t.seen > LOGGED_IN);
   // When each key under a prefix was kept, but for the ones kept longer ago than they're kept for, which are forgotten.
-  async function recent(prefix: string, keep: number) {
-    const all = await storage.list<number>({ prefix });
-    for (const [k, at] of all)
-      if (now() - at >= keep) {
-        all.delete(k);
-        await storage.delete(k);
-      }
-    return all;
-  }
+  const recent = async (prefix: string, keep: number) => forget(await storage.list<number>({ prefix }), (at) => now() - at >= keep);
   const name = (t: Tty) => `ttys${String(t.n).padStart(3, "0")}`;
   const sessions = (all: Map<string, Tty>): Session[] =>
     [...all.values()]

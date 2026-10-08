@@ -1782,6 +1782,41 @@ describe("who's logged in", () => {
     assert.equal(whose("1:2:3:4:5:6:7:8:9"), "1:2:3:4::/64");
   });
 
+  test("the host forgets what has been kept long enough in one request to its storage, or one for each 128 keys", async () => {
+    const storage = memoryStorage();
+    const deleted: (string | string[])[] = [];
+    const counted = { ...storage, delete: (keys: string | string[]) => (deleted.push(keys), storage.delete(keys)) };
+    let time = 0;
+    const host = createHost(counted, () => time);
+    for (let i = 0; i < 130; i++) await host.beat(`token-${String(i).padStart(10, "0")}`, "/");
+    // While they're all logged in, there's nothing to forget, and storage isn't asked to.
+    assert.equal((await host.who()).length, 130);
+    assert.equal(deleted.length, 0);
+    // Three minutes on, one has checked in again, and the rest are gone: 129 of them, in two requests.
+    time += 2 * 60e3;
+    await host.beat("token-0000000007", "/talks");
+    time += 60e3 + 1;
+    assert.deepEqual(
+      (await host.who()).map((u) => [u.tty, u.page]),
+      [["ttys007", "/talks"]],
+    );
+    assert.deepEqual(
+      deleted.map((keys) => keys.length),
+      [128, 1],
+    );
+    assert.equal((await storage.list({ prefix: "tty:" })).size, 1);
+    // So are a day's keys, a day on: the keys of messages that were sent.
+    for (let i = 0; i < 3; i++) await host.delivered(`key-${String(i).padStart(12, "0")}`);
+    deleted.length = 0;
+    time += 864e5;
+    await host.mail("192.0.2.1");
+    assert.deepEqual(
+      deleted.filter(Array.isArray).map((keys) => keys.map((key) => key.split(":")[0])),
+      [["key", "key", "key"]],
+    );
+    assert.equal((await storage.list({ prefix: "key:" })).size, 0);
+  });
+
   test("has room for a thousand terminals; after that, a tab can only look", async () => {
     const host = createHost(memoryStorage(), () => 0);
     for (let i = 0; i < 1000; i++) await host.beat(`token-${String(i).padStart(10, "0")}`, "/");
