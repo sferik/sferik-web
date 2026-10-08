@@ -141,6 +141,8 @@ interface LiveOptions {
   token?: string;
   store?: Store;
   refresh?: boolean;
+  // What GitHub is asked about: the projects' repositories, and whose commits are sferik's.
+  about: () => Promise<{ repos: string[]; email: string }>;
 }
 interface Entry {
   at: number;
@@ -150,13 +152,13 @@ interface Entry {
 }
 export type Live = ReturnType<typeof createLive>;
 
-function createLive({ fetch, offline, now, timeout, token, store, refresh }: LiveOptions) {
+function createLive({ fetch, offline, now, timeout, token, store, refresh, about }: LiveOptions) {
   const cache = new Map<string, Entry>();
   const headers: Record<string, string> = { "user-agent": "sferik.net", accept: "application/json", ...(token && { authorization: `Bearer ${token}` }) };
 
-  async function getJSON<T>(url: string, init: RequestInit = {}): Promise<T> {
+  async function getJSON<T>(url: string, init: RequestInit = {}, wait = timeout): Promise<T> {
     const timer = new AbortController();
-    const t = setTimeout(() => timer.abort(), timeout);
+    const t = setTimeout(() => timer.abort(), wait);
     try {
       const res = await fetch(url, { ...init, headers, signal: timer.signal });
       if (!res.ok) throw new Error(`${url}: ${res.status}`);
@@ -168,42 +170,85 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh }: Liv
 
   // GitHub's GraphQL API, which answers only with a token. An answer with
   // errors has failed, whatever its status says.
-  async function graphql<T>(query: string): Promise<T> {
-    const { data, errors } = await getJSON<{ data?: T; errors?: { message: string }[] }>("https://api.github.com/graphql", {
-      method: "POST",
-      body: JSON.stringify({ query }),
-    });
+  async function graphql<T>(query: string, wait: number): Promise<T> {
+    const { data, errors } = await getJSON<{ data?: T; errors?: { message: string }[] }>(
+      "https://api.github.com/graphql",
+      { method: "POST", body: JSON.stringify({ query }) },
+      wait,
+    );
     if (!data || errors?.length) throw new Error(`GitHub: ${errors?.[0].message ?? "no data"}`);
     return data;
   }
 
-  // A year of contributions, from GitHub itself: the calendar on the profile
-  // page. shade() gives the days their levels.
-  type Calendar = {
-    user: { contributionsCollection: { contributionCalendar: { weeks: { contributionDays: { date: string; contributionCount: number }[] }[] } } };
+  // Everything GitHub is asked for, in one request, with a token: a year of
+  // contributions (the calendar on the profile page; shade() gives the days
+  // their levels), each repository's stars, and the last push. That's the
+  // latest commit of sferik's own on the default branch of the ten
+  // repositories last pushed to, among those he can push to: a push of
+  // someone else's, or a robot's, isn't his, and GitHub doesn't say who
+  // pushed. So it's when the commit was made, which is when it was pushed, or
+  // near enough.
+  //
+  // It's three requests' worth of answer, and takes about as long as the
+  // three would one after another, so it's given three times as long. The
+  // three are asked for at different times, each when it's due, so one that's
+  // asked within a minute of another is told what that one was: on Workers,
+  // where a refresh asks for them all at once, that's always.
+  interface GitHub {
+    days: Day[];
+    stars: Record<string, number>;
+    push?: Push;
+  }
+  type Repositories = { nameWithOwner: string; defaultBranchRef: { target: { history: { nodes: { oid: string; committedDate: string }[] } } } | null }[];
+  type Answered = {
+    user: {
+      contributionsCollection: { contributionCalendar: { weeks: { contributionDays: { date: string; contributionCount: number }[] }[] } };
+      repositories: { nodes: Repositories };
+    };
   };
-  const CALENDAR = `query { user(login: "sferik") { contributionsCollection { contributionCalendar { weeks { contributionDays { date contributionCount } } } } } }`;
-  const calendar = async (): Promise<Day[]> =>
-    (await graphql<Calendar>(CALENDAR)).user.contributionsCollection.contributionCalendar.weeks.flatMap((week) =>
-      week.contributionDays.map((day) => ({ date: day.date, count: day.contributionCount, level: 0 })),
-    );
-  // The same, from a service that reads it off the profile page: someone
-  // else's, which could go away, so it's for when there's no token, or GitHub fails.
-  const scraped = async () => (await getJSON<{ contributions: Day[] }>("https://github-contributions-api.jogruber.de/v4/sferik?y=last")).contributions;
-
-  // Each repository's stars: repository → stars. With a token, all in one
-  // request, where a request each would be most of the fifty a Worker on the
-  // free plan may make at a time.
-  const starred = async (repos: string[]): Promise<Record<string, number>> => {
-    const fields = repos.map((repo, i) => {
+  const everything = (repos: string[], email: string) => {
+    const stars = repos.map((repo, i) => {
       const [owner, name] = repo.split("/");
       return `r${i}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { stargazerCount }`;
     });
-    const data = await graphql<Record<string, { stargazerCount: number }>>(`query { ${fields.join(" ")} }`);
-    return Object.fromEntries(repos.map((repo, i) => [repo, data[`r${i}`].stargazerCount]));
+    const calendar = "contributionsCollection { contributionCalendar { weeks { contributionDays { date contributionCount } } } }";
+    const commit = `history(first: 1, author: {emails: [${JSON.stringify(email)}]}) { nodes { oid committedDate } }`;
+    const pushed = `repositories(first: 10, orderBy: {field: PUSHED_AT, direction: DESC}, privacy: PUBLIC, ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]) { nodes { nameWithOwner defaultBranchRef { target { ... on Commit { ${commit} } } } } }`;
+    return `query { user(login: "sferik") { ${calendar} ${pushed} } ${stars.join(" ")} }`;
   };
-  // Or a request each, keeping the ones that answer. None at all is a failure.
-  const counted = async (repos: string[]): Promise<Record<string, number>> => {
+  // The latest of sferik's commits among the repositories. (The times are all written the same way, so the later is the greater.)
+  const latest = (repositories: Repositories): Push | undefined =>
+    repositories
+      .flatMap((r) => (r.defaultBranchRef?.target.history.nodes ?? []).map((c): Push => ({ repo: r.nameWithOwner, sha: c.oid, at: c.committedDate })))
+      .reduce<Push | undefined>((last, push) => (last && last.at >= push.at ? last : push), undefined);
+  let asked: { at: number; answer: Promise<GitHub> } | undefined;
+  function github(): Promise<GitHub> {
+    if (!asked || now() - asked.at >= 60e3) {
+      const answer = about().then(async ({ repos, email }): Promise<GitHub> => {
+        const data = await graphql<Answered & Record<string, { stargazerCount: number }>>(everything(repos, email), 3 * timeout);
+        return {
+          days: data.user.contributionsCollection.contributionCalendar.weeks.flatMap((week) =>
+            week.contributionDays.map((day) => ({ date: day.date, count: day.contributionCount, level: 0 })),
+          ),
+          stars: Object.fromEntries(repos.map((repo, i) => [repo, data[`r${i}`].stargazerCount])),
+          push: latest(data.user.repositories.nodes),
+        };
+      });
+      // With a token, GitHub is asked this way first, and the other ways if it
+      // fails: which get the numbers, so nothing else would say that it has.
+      answer.catch((err: unknown) => console.error("GitHub, with the token:", err));
+      asked = { at: now(), answer };
+    }
+    return asked.answer;
+  }
+
+  // The contributions, from a service that reads them off the profile page: someone
+  // else's, which could go away, so it's for when there's no token, or GitHub fails.
+  const scraped = async () => (await getJSON<{ contributions: Day[] }>("https://github-contributions-api.jogruber.de/v4/sferik?y=last")).contributions;
+
+  // Each repository's stars, without a token: a request each, keeping the ones that answer. None at all is a failure.
+  const counted = async (): Promise<Record<string, number>> => {
+    const { repos } = await about();
     const counts = await Promise.allSettled(
       repos.map(async (repo) => [repo, (await getJSON<{ stargazers_count: number }>(`https://api.github.com/repos/${repo}`)).stargazers_count] as const),
     );
@@ -253,14 +298,23 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh }: Liv
   }
 
   const HOUR = 3600e3;
-  // With a token, GitHub is asked first, and something else if that fails:
-  // which gets the numbers, so nothing would say that the token no longer works.
-  const failing =
-    <T>(otherwise: () => Promise<T>) =>
-    (err: unknown) => {
-      console.error("GitHub, with the token:", err);
-      return otherwise();
-    };
+  // The last push, without a token: from the events GitHub lists.
+  const pushed = async (): Promise<Push> => {
+    type Event = { type: string; repo: { name: string }; payload?: { head?: string }; created_at: string };
+    const events = await getJSON<Event[]>("https://api.github.com/users/sferik/events/public?per_page=100");
+    // GitHub lists the latest events, but not the latest first: a push
+    // from last night can come after one from yesterday morning. So the
+    // latest push is the one that says so, not the first in the list.
+    // (The times are all written the same way, so the later is the greater.)
+    const ev = events
+      .filter((e) => e.type === "PushEvent" && e.payload?.head)
+      .reduce<Event | undefined>((last, e) => (last && last.created_at >= e.created_at ? last : e), undefined);
+    // The latest hundred events may have no push among them (days of
+    // reviews and issues), which doesn't undo the last one: that's a load
+    // that failed, so the push already known is kept.
+    if (!ev) throw new Error("GitHub: no push in the latest events");
+    return { repo: ev.repo.name, sha: ev.payload!.head!, at: ev.created_at };
+  };
   const loaded = async (key: "gems" | "contributions") => (store ? ((await store.get(`at:${key}`)) as number | undefined) : cache.get(key)?.loaded);
   return {
     // When a value was last loaded, if it has been: what it's in says so (asOf).
@@ -280,25 +334,21 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh }: Liv
         const list = await getJSON<{ name: string; downloads: number }[]>("https://rubygems.org/api/v1/owners/sferik/gems.json");
         return Object.fromEntries(list.map((g) => [g.name, g.downloads])) as Record<string, number>;
       }),
-    stars: (repos: string[]) => cached("stars", 6 * HOUR, () => (token ? starred(repos).catch(failing(() => counted(repos))) : counted(repos))),
-    contributions: () => cached("contributions", HOUR, () => (token ? calendar().catch(failing(scraped)) : scraped())),
+    // With a token, each is its part of GitHub's one answer, or else what it is without one: when that request
+    // fails, or (for the last push) has no commit of sferik's in it.
+    stars: () => cached("stars", 6 * HOUR, () => (token ? github().then((all) => all.stars, counted) : counted())),
+    contributions: () => cached("contributions", HOUR, () => (token ? github().then((all) => all.days, scraped) : scraped())),
     lastPush: () =>
-      cached("push", 5 * 60e3, async (): Promise<Push> => {
-        type Event = { type: string; repo: { name: string }; payload?: { head?: string }; created_at: string };
-        const events = await getJSON<Event[]>("https://api.github.com/users/sferik/events/public?per_page=100");
-        // GitHub lists the latest events, but not the latest first: a push
-        // from last night can come after one from yesterday morning. So the
-        // latest push is the one that says so, not the first in the list.
-        // (The times are all written the same way, so the later is the greater.)
-        const ev = events
-          .filter((e) => e.type === "PushEvent" && e.payload?.head)
-          .reduce<Event | undefined>((latest, e) => (latest && latest.created_at >= e.created_at ? latest : e), undefined);
-        // The latest hundred events may have no push among them (days of
-        // reviews and issues), which doesn't undo the last one: that's a load
-        // that failed, so the push already known is kept.
-        if (!ev) throw new Error("GitHub: no push in the latest events");
-        return { repo: ev.repo.name, sha: ev.payload!.head!, at: ev.created_at };
-      }),
+      cached("push", 5 * 60e3, () =>
+        token
+          ? github()
+              .then(
+                (all) => all.push,
+                () => undefined,
+              )
+              .then((push) => push ?? pushed())
+          : pushed(),
+      ),
   };
 }
 
@@ -320,7 +370,7 @@ type Read = <K extends keyof DataFiles>(name: K) => Promise<DataFiles[K]>;
 function createModules({ live, read }: { live: Live; read: Read }) {
   async function projectsData(): Promise<Src> {
     const data = await read("projects");
-    const [gems, stars] = await Promise.all([live.gems(), live.stars(data.projects.flatMap((p) => p.repo ?? []))]);
+    const [gems, stars] = await Promise.all([live.gems(), live.stars()]);
     const projects = data.projects.map((p) => ({
       name: p.name,
       url: p.url,
@@ -1318,7 +1368,12 @@ export function createApp({
 }: AppOptions = {}) {
   const read = files.data as Read;
   const asset = async (name: string) => (await files.asset(name))!.body; // for files that always exist
-  const site = createModules({ live: createLive({ fetch, offline, now, timeout, token, store, refresh }), read });
+  // What GitHub is asked about: the repositories of the projects that have one, and whose commits are sferik's.
+  const about = async () => ({
+    repos: (await read("projects")).projects.map((p) => p.repo).filter(Boolean) as string[],
+    email: (await read("profile")).email,
+  });
+  const site = createModules({ live: createLive({ fetch, offline, now, timeout, token, store, refresh, about }), read });
   // A page's scripts and style, at the deployed commit's URLs. With no commit
   // (bun start), they stay where they are, and are checked on every load.
   const prefix = version.commit ? `/v/${version.commit}` : "";

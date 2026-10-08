@@ -844,87 +844,152 @@ describe("live data", () => {
     await app.close();
   });
 
-  test("with a token, the contributions come from GitHub itself, and from elsewhere only if that fails", async (t) => {
-    // A failure with the token is said, since the numbers still come, from elsewhere.
+  // What GitHub's one answer has: a calendar, the repositories last pushed to, and each project's stars.
+  const REPOS = (JSON.parse(fs.readFileSync(path.join(ROOT, "data", "projects.json"), "utf8")) as { projects: { repo: string | null }[] }).projects.flatMap(
+    (p) => p.repo ?? [],
+  );
+  const commit = (oid: string, committedDate: string) => ({ target: { history: { nodes: [{ oid, committedDate }] } } });
+  const answered = (repositories: object[] = [{ nameWithOwner: "sferik/sferik-web", defaultBranchRef: commit("9fe89a4", "2026-10-08T12:36:34Z") }]) => ({
+    data: {
+      user: {
+        contributionsCollection: {
+          contributionCalendar: {
+            weeks: [{ contributionDays: [{ date: "2026-10-04", contributionCount: 2 }] }, { contributionDays: [{ date: "2026-10-05", contributionCount: 5 }] }],
+          },
+        },
+        repositories: { nodes: repositories },
+      },
+      ...Object.fromEntries(REPOS.map((_, i) => [`r${i}`, { stargazerCount: 100 + i }])),
+    },
+  });
+  type Graph = { live: boolean; total: number; contributions: { level: number }[]; lastPush: { repo: string; sha: string; at: string } | null };
+  type Project = { name: string; stars: number | null };
+  const graphOf = async (app: App) => JSON.parse((await app.get("/contributions", { accept: JSON_ })).body) as Graph;
+  const projectsOf = async (app: App) => (JSON.parse((await app.get("/src", { accept: JSON_ })).body) as { projects: Project[] }).projects;
+  const starsOf = (projects: Project[], name: string) => projects.find((p) => p.name === name)!.stars;
+
+  test("with a token, GitHub is asked once for the contributions, every repository's stars, and the last push", async () => {
+    const net = fakeNet({ "https://api.github.com/graphql": async () => Response.json(answered()) });
+    const app = await serve({ fetch: net.fetch, token: "secret" });
+    const graph = await graphOf(app);
+    assert.deepEqual([graph.live, graph.total], [true, 7]);
+    // Shaded like any other: GitHub's days come without levels.
+    assert.deepEqual(
+      graph.contributions.map((d) => d.level),
+      [1, 4],
+    );
+    assert.deepEqual(graph.lastPush, { repo: "sferik/sferik-web", sha: "9fe89a4", at: "2026-10-08T12:36:34Z" });
+    const all = await projectsOf(app);
+    assert.equal(starsOf(all, "multi_json"), 100 + REPOS.indexOf("sferik/multi_json"));
+    assert.equal(starsOf(all, "simplecov"), 100 + REPOS.indexOf("simplecov-ruby/simplecov"));
+    // One request, with the token, and no other of GitHub or of the service that reads the profile page.
+    const github = net.calls.filter((c) => /github/.test(c.url));
+    assert.deepEqual(
+      github.map((c) => [c.url, c.init.method, (c.init.headers as Record<string, string>).authorization]),
+      [["https://api.github.com/graphql", "POST", "Bearer secret"]],
+    );
+    // It asks for the calendar, for sferik's latest commit in the repositories last pushed to, and for each
+    // repository's stars by owner and name, in order.
+    const { query } = JSON.parse(github[0].init.body as string) as { query: string };
+    assert.match(
+      query,
+      /^query \{ user\(login: "sferik"\) \{ contributionsCollection \{ contributionCalendar \{ weeks \{ contributionDays \{ date contributionCount \} \} \} \} repositories\(/,
+    );
+    assert.ok(
+      query.includes(
+        "repositories(first: 10, orderBy: {field: PUSHED_AT, direction: DESC}, privacy: PUBLIC, ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER])",
+      ),
+    );
+    assert.ok(
+      query.includes(
+        '{ nodes { nameWithOwner defaultBranchRef { target { ... on Commit { history(first: 1, author: {emails: ["sferik@gmail.com"]}) { nodes { oid committedDate } } } } } } }',
+      ),
+    );
+    assert.ok(query.includes(`r0: repository(owner: "${REPOS[0].split("/")[0]}", name: "${REPOS[0].split("/")[1]}") { stargazerCount }`));
+    assert.ok(
+      query.endsWith(`r${REPOS.length - 1}: repository(owner: "${REPOS.at(-1)!.split("/")[0]}", name: "${REPOS.at(-1)!.split("/")[1]}") { stargazerCount } }`),
+    );
+    await app.close();
+  });
+
+  test("the last push is sferik's latest commit among the repositories, whichever has it", async () => {
+    const repositories = [
+      { nameWithOwner: "railsadminteam/rails_admin", defaultBranchRef: commit("e24946d", "2016-01-03T21:08:03Z") }, // pushed to last, by someone else
+      { nameWithOwner: "sferik/sferik-web", defaultBranchRef: commit("9fe89a4", "2026-10-08T12:36:34Z") },
+      { nameWithOwner: "sferik/sferik-ruby", defaultBranchRef: commit("60844d1", "2026-10-08T12:49:27Z") },
+      { nameWithOwner: "fastruby/fast-ruby", defaultBranchRef: { target: { history: { nodes: [] } } } }, // none of his
+      { nameWithOwner: "sferik/empty", defaultBranchRef: null }, // nothing in it
+      { nameWithOwner: "sferik/x-ruby", defaultBranchRef: commit("5edf015", "2026-10-06T18:16:46Z") },
+    ];
+    const net = fakeNet({ "https://api.github.com/graphql": async () => Response.json(answered(repositories)) });
+    const app = await serve({ fetch: net.fetch, token: "secret" });
+    assert.deepEqual((await graphOf(app)).lastPush, { repo: "sferik/sferik-ruby", sha: "60844d1", at: "2026-10-08T12:49:27Z" });
+    await app.close();
+    // With no commit of his among them, the events are asked, as without a token: and nothing else is.
+    const none = fakeNet({ "https://api.github.com/graphql": async () => Response.json(answered(repositories.slice(3, 5))) });
+    const quiet = await serve({ fetch: none.fetch, token: "secret" });
+    const graph = await graphOf(quiet);
+    assert.deepEqual([graph.total, graph.lastPush?.sha], [7, "abc1234def5678"]);
+    assert.deepEqual(
+      none.calls
+        .map((c) => c.url)
+        .filter((url) => /github/.test(url))
+        .sort(),
+      ["https://api.github.com/graphql", "https://api.github.com/users/sferik/events/public?per_page=100"],
+    );
+    await quiet.close();
+  });
+
+  test("with a token, each is asked for the other way when GitHub's one answer fails, which is said once", async (t) => {
     const said: unknown[][] = [];
     stub(t, console, "error", (...args: unknown[]) => void said.push(args));
-    const calendar = {
-      weeks: [{ contributionDays: [{ date: "2026-10-04", contributionCount: 2 }] }, { contributionDays: [{ date: "2026-10-05", contributionCount: 5 }] }],
-    };
-    const answers: object[] = [
-      { data: { user: { contributionsCollection: { contributionCalendar: calendar } } } },
-      { errors: [{ message: "rate limited" }] },
-      {},
-    ];
-    for (const [answer, total] of [
-      [answers[0], 7],
-      [answers[1], 8], // the other service's fixture
-      [answers[2], 8],
-      [{ ...answers[0], ...answers[1] }, 8], // some of an answer, and an error: not an answer
+    for (const [answer, why] of [
+      [{ errors: [{ message: "rate limited" }] }, "rate limited"],
+      [{}, "no data"],
+      [{ ...answered(), errors: [{ message: "rate limited" }] }, "rate limited"], // some of an answer, and an error: not an answer
     ] as const) {
+      said.length = 0;
       const net = fakeNet({ "https://api.github.com/graphql": async () => Response.json(answer) });
       const app = await serve({ fetch: net.fetch, token: "secret" });
-      const graph = JSON.parse((await app.get("/contributions", { accept: JSON_ })).body);
-      assert.deepEqual([graph.live, graph.total], [true, total]);
-      const asked = net.calls.find((c) => c.url === "https://api.github.com/graphql")!;
-      assert.equal(asked.init.method, "POST");
-      assert.match(JSON.parse(asked.init.body as string).query, /user\(login: "sferik"\) \{ contributionsCollection/);
-      assert.equal((asked.init.headers as Record<string, string>).authorization, "Bearer secret");
-      assert.equal(
-        net.calls.some((c) => c.url.includes("jogruber")),
-        total === 8,
+      const graph = await graphOf(app);
+      assert.deepEqual([graph.live, graph.total, graph.lastPush?.sha], [true, 8, "abc1234def5678"]); // the other service's fixture, and the events'
+      assert.equal(starsOf(await projectsOf(app), "multi_json"), 1234); // a request each
+      assert.equal(net.calls.filter((c) => c.url === "https://api.github.com/graphql").length, 1);
+      assert.deepEqual(
+        said.map(([what, err]) => [what, String(err)]),
+        [["GitHub, with the token:", `Error: GitHub: ${why}`]],
       );
       await app.close();
     }
-    assert.deepEqual(
-      said.map(([what, err]) => [what, String(err)]),
-      ["rate limited", "no data", "rate limited"].map((why) => ["GitHub, with the token:", `Error: GitHub: ${why}`]),
-    );
-    // Shaded like any other: GitHub's days come without levels.
-    const net = fakeNet({ "https://api.github.com/graphql": async () => Response.json(answers[0]) });
-    const app = await serve({ fetch: net.fetch, token: "secret" });
-    const days = JSON.parse((await app.get("/contributions", { accept: JSON_ })).body).contributions as { level: number }[];
-    assert.deepEqual(
-      days.map((d) => d.level),
-      [1, 4],
-    );
-    await app.close();
-    // Without a token, GitHub isn't asked.
-    const anonymous = fakeNet();
-    const open = await serve({ fetch: anonymous.fetch });
-    await open.get("/contributions", { accept: JSON_ });
-    assert.equal(
-      anonymous.calls.some((c) => c.url.endsWith("/graphql")),
-      false,
-    );
-    await open.close();
   });
 
-  test("with a token, every repository's stars come in one request; without, in one each, keeping those that answer", async (t) => {
-    stub(t, console, "error", () => {});
-    type Project = { name: string; stars: number | null };
-    const src = async (app: App) => (JSON.parse((await app.get("/src", { accept: JSON_ })).body) as { projects: Project[] }).projects;
-    const stars = (projects: Project[], name: string) => projects.find((p) => p.name === name)!.stars;
-    const repos = (JSON.parse(fs.readFileSync(path.join(ROOT, "data", "projects.json"), "utf8")) as { projects: { repo: string | null }[] }).projects.flatMap(
-      (p) => p.repo ?? [],
-    );
-
-    // One request, asking for each repository by owner and name, in order.
-    let query = "";
-    const net = fakeNet({
-      "https://api.github.com/graphql": async (init) => {
-        query = JSON.parse(init.body as string).query;
-        return Response.json(query.includes("stargazerCount") ? { data: Object.fromEntries(repos.map((_, i) => [`r${i}`, { stargazerCount: 100 + i }])) } : {});
-      },
-    });
-    const app = await serve({ fetch: net.fetch, token: "secret" });
-    const all = await src(app);
-    assert.equal(stars(all, "multi_json"), 100 + repos.indexOf("sferik/multi_json"));
-    assert.equal(stars(all, "simplecov"), 100 + repos.indexOf("simplecov-ruby/simplecov"));
-    assert.ok(query.includes(`r0: repository(owner: "${repos[0].split("/")[0]}", name: "${repos[0].split("/")[1]}") { stargazerCount }`));
-    assert.equal(net.calls.filter((c) => c.url.startsWith("https://api.github.com/repos/")).length, 0);
+  test("GitHub's one answer is for whatever asks within a minute, and is given three times as long as another request", async () => {
+    let clock = 0;
+    let asked = 0;
+    const net = fakeNet({ "https://api.github.com/graphql": async () => (asked++, Response.json(answered())) });
+    const app = await serve({ fetch: net.fetch, token: "secret", now: () => clock });
+    await graphOf(app);
+    await projectsOf(app);
+    assert.equal(asked, 1);
+    // The last push is due again in five minutes: by then it's another request, which the rest aren't due for.
+    clock += 5 * 60e3;
+    await graphOf(app);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(asked, 2);
     await app.close();
 
+    // An answer that takes twice as long as another request may is still in time.
+    const slow = (ms: number) => (init: RequestInit) =>
+      new Promise<Response>((resolve, reject) => {
+        const timer = setTimeout(() => resolve(Response.json(answered())), ms);
+        init.signal!.addEventListener("abort", () => (clearTimeout(timer), reject(new Error("timeout"))));
+      });
+    const patient = await serve({ fetch: fakeNet({ "https://api.github.com/graphql": slow(60) }).fetch, token: "secret", timeout: 30 });
+    assert.equal((await graphOf(patient)).total, 7);
+    await patient.close();
+  });
+
+  test("without a token, GitHub's one request isn't made: the stars come in a request each, keeping those that answer", async () => {
     // Without a token, a request each; one that fails leaves its snapshot.
     const some = fakeNet({});
     const fetch = (async (input: string | URL | Request, init?: RequestInit) =>
@@ -932,14 +997,19 @@ describe("live data", () => {
         ? new Response("", { status: 404 })
         : some.fetch(input, init)) as typeof globalThis.fetch;
     const partial = await serve({ fetch });
-    const mixed = await src(partial);
-    assert.deepEqual([stars(mixed, "multi_json"), stars(mixed, "multi_xml")], [snapshot("multi_json").stars, 1234]);
-    assert.equal(some.calls.filter((c) => c.url.startsWith("https://api.github.com/repos/")).length, repos.length - 1);
+    const mixed = await projectsOf(partial);
+    assert.deepEqual([starsOf(mixed, "multi_json"), starsOf(mixed, "multi_xml")], [snapshot("multi_json").stars, 1234]);
+    assert.equal(some.calls.filter((c) => c.url.startsWith("https://api.github.com/repos/")).length, REPOS.length - 1);
+    await graphOf(partial);
+    assert.equal(
+      some.calls.some((c) => c.url.endsWith("/graphql")),
+      false,
+    );
     await partial.close();
 
     // None answering leaves every snapshot.
     const none = await serve({ fetch: (async () => new Response("", { status: 403 })) as typeof globalThis.fetch });
-    assert.equal(stars(await src(none), "multi_xml"), snapshot("multi_xml").stars);
+    assert.equal(starsOf(await projectsOf(none), "multi_xml"), snapshot("multi_xml").stars);
     await none.close();
   });
 

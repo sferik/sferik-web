@@ -125,8 +125,8 @@ curl -H 'Accept: application/json' localhost:3745/        # what the home page b
 
 ### Live data
 
-The server fetches downloads from RubyGems and stars, contributions, and the latest push from GitHub (the contributions from its GraphQL API, which
-needs `GITHUB_TOKEN`; without one, from [a service](https://github.com/grubersjoe/github-contributions-api) that reads them off the profile page), then caches them: an hour for most things, five minutes for
+The server fetches downloads from RubyGems and stars, contributions, and the latest push from GitHub (all three in one request to its GraphQL API, which
+needs `GITHUB_TOKEN`, where the latest push is the latest commit of mine on the default branch of the repositories last pushed to; without a token, or if that request fails, in a request for each repository's stars, from the events GitHub lists, and from [a service](https://github.com/grubersjoe/github-contributions-api) that reads the contributions off the profile page), then caches them: an hour for most things, five minutes for
 the latest push. A request never waits on a slow API once the cache is warm. Stale values are served while a refresh runs in the background, and if RubyGems or
 GitHub is down, responses fall back to the snapshots in `data/`. `/contributions` and `/src` say which in `live`, and when the numbers are from in `asOf`. Numbers that couldn't be refreshed for two hours aren't live either: they're the last that were fetched, and a refresh that fails says so in the log.
 
