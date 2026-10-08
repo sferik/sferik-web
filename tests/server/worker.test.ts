@@ -733,6 +733,23 @@ describe("the Worker", () => {
       assert.equal(await downloads(await get(e, "/whoami", "application/json")), 9);
       assert.equal(read, 1, `${method} ${status}`); // once, for it and for the next
     }
+    // If it can't be built now (the app fails), it's answered with what's kept after all, not with the failure:
+    // whole, or told it hasn't changed, or its headers alone, as it asked.
+    clock += 300_000;
+    const failures = stub(t, console, "error", () => {});
+    const working = e.LIVE.get;
+    e.LIVE.get = () => Promise.reject(new Error("KV is down"));
+    const spared = await fresh();
+    assert.deepEqual([spared.status, spared.headers.get("cache-control"), await downloads(spared)], [200, "public, max-age=300", 9]);
+    const same = await fresh({ "if-none-match": now.headers.get("etag")! });
+    assert.deepEqual([same.status, await same.text()], [304, ""]);
+    const head = await fresh({}, "HEAD");
+    assert.deepEqual([head.status, await head.text()], [200, ""]);
+    assert.equal(failures.calls, 3); // each was tried, and failed
+    // With nothing kept, the failure is its answer.
+    assert.equal((await get(e, "/src", "application/json")).status, 500);
+    e.LIVE.get = working;
+    await Promise.all(waiting);
     // What changes only with a deploy is kept an hour past its own hour.
     await get(e, "/talks", "application/json");
     await Promise.all(waiting);

@@ -200,7 +200,9 @@ const LIVE_PATHS = ["/contributions", "/src"];
 // as not: it isn't built yet. So a request that says not to be answered from
 // a cache (Cache-Control: no-cache) isn't answered with what's no longer
 // good: it's built now, and waits for that. What's still good is its answer
-// all the same, so saying so builds nothing that wasn't due to be built.
+// all the same, so saying so builds nothing that wasn't due to be built. And
+// if it can't be built now, because the app fails, what's kept is its answer
+// after all: an hour old at most, where it would have had an error.
 //
 // What wasn't found is kept for a minute too, since most of what asks for
 // what isn't here is a script trying every door (/wp-login.php), and so is
@@ -330,8 +332,13 @@ async function respond(request: Request, env: Env, ctx: Context): Promise<Respon
   const headers = new Headers(request.headers);
   headers.delete("if-none-match");
   const again = () => answer(new Request(request.url, { headers }));
-  // One that insists waits for it, and is answered from it: that's all the building there is to do.
-  if (insists(request)) return asAsked(await again(), request);
+  // One that insists waits for it, and is answered from it: that's all the building there is to do. Unless it
+  // can't be built (the app fails): then what's kept is its answer after all, which is better than none, and
+  // says how old it is (Age), so whoever keeps what they're told asks again the next time.
+  if (insists(request)) {
+    const built = await again();
+    return built.status >= 500 ? toSend(kept, request.method === "HEAD") : asAsked(built, request);
+  }
   const marker = new Request(`${key}&building=1`);
   if (!begun(await cache!.match(marker), now)) {
     ctx.waitUntil(cache!.put(marker, building(now)));
