@@ -224,7 +224,7 @@ It shuts down cleanly on `SIGTERM`. The page's shell treats sferik.net, sferik.c
 A GitHub Action (`.github/workflows/refresh-snapshots.yml`) refreshes `data/contributions.json` and the downloads and stars in `data/projects.json` daily
 (`bun run snapshot` does the latter by hand), so the fallback snapshots stay recent. Another
 (`.github/workflows/ci.yml`) lints, type-checks, and runs both test suites on every push and pull request, with the server tests on the oldest and newest
-supported Node. A push to `main` that passes is deployed, and then the job asks sferik.net's `/version` whether it's serving that commit. A third (`.github/workflows/redraw-previews.yml`) redraws the link-preview
+supported Node. A push to `main` that passes is deployed, and then the job asks sferik.net's `/version` whether it's serving that commit. With a `DRIFT_TOKEN` secret (a fine-grained token with read and write access to the contents of [sferik/sferik-ruby](https://github.com/sferik/sferik-ruby), and nothing else), it then tells the Ruby client's repository that the site was deployed, which checks at once whether the API is still what it has saved; without one, that waits for the client's daily check. A third (`.github/workflows/redraw-previews.yml`) redraws the link-preview
 images weekly, since the home page's shows the contribution graph, and starts a deploy if they changed. Dependabot proposes package and action updates weekly, once a release is a week old.
 
 ## Credits

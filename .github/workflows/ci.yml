@@ -125,6 +125,7 @@ jobs:
   # Cloudflare Workers" token for the account and the sferik.net zone) and the
   # CLOUDFLARE_ACCOUNT_ID secret. The GITHUB_TOKEN the Worker uses at runtime is
   # a Worker secret, set once with `wrangler secret put`, not this workflow's.
+  # The DRIFT_TOKEN secret is optional (see the last step).
   deploy:
     name: Deploy
     needs: [lint, typecheck, server, browser, lighthouse]
@@ -168,3 +169,19 @@ jobs:
           curl -fsS -H 'Accept: text/html' https://sferik.net/ | grep -q '<pre class="figlet"'
           curl -fsS -o /dev/null https://sferik.net/site.js
           curl -fsS https://sferik.net/whoami.json | jq -e '.blocks | length > 0' > /dev/null
+      # Tell the Ruby client's repository (sferik/sferik-ruby) that the site has been deployed, so that it checks
+      # now whether the API is still what it has saved (its "API drift" workflow), where it would have found out
+      # at its next daily run. Needs the DRIFT_TOKEN secret: a fine-grained token for that repository alone, with
+      # read and write access to its contents, which is what starting a workflow there this way takes. Without
+      # it nothing is told, and the daily run finds out. And telling it is no part of the deploy: if it fails,
+      # the deploy hasn't.
+      - name: Have the Ruby client check the API for drift
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.DRIFT_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::No DRIFT_TOKEN, so sferik/sferik-ruby isn't told: its daily run will check."
+            exit 0
+          fi
+          gh api repos/sferik/sferik-ruby/dispatches -f event_type=deployed -f "client_payload[commit]=$GITHUB_SHA"
