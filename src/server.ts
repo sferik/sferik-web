@@ -1293,9 +1293,18 @@ export function createApp({
     vcard?: () => Promise<string>;
     cache?: string;
   }
+  // How long a resource is good for. One with live numbers in it (and the
+  // home page's text has every module's) is good for a minute. The rest
+  // change only with a deploy, so they're good for an hour, as the feed and
+  // the motto are. On Workers, Cloudflare's cache starts over with each
+  // deploy, so what it answers with is never from before one; a browser, or
+  // a client that keeps what it's told, may be an hour behind.
+  const LIVE: ModuleId[] = ["whoami", "contributions", "src"];
+  const DEPLOYED = "public, max-age=3600";
   const resources: Record<string, Resource> = {
     "/": { json: site.home, text: site.homeText },
     "/resume": {
+      cache: DEPLOYED,
       json: site.resume,
       text: async (built) => manPage((built?.["/resume"] as Resume | undefined) ?? (await site.resume()), new Date(now())),
       latex: async () => latexResume(await site.resume()),
@@ -1304,11 +1313,15 @@ export function createApp({
   };
   for (const id of Object.keys(site.modules) as ModuleId[]) {
     const render = site.text[id] as (m: unknown) => string;
-    resources[`/${id}`] = { json: site.modules[id], text: async (built) => render(built?.[`/${id}`] ?? (await site.modules[id]())) };
+    resources[`/${id}`] = {
+      json: site.modules[id],
+      text: async (built) => render(built?.[`/${id}`] ?? (await site.modules[id]())),
+      ...(!LIVE.includes(id) && { cache: DEPLOYED }),
+    };
   }
   resources["/index"] = resources["/"];
   resources["/finger"].vcard = async () => vcard(await site.modules.finger());
-  resources["/podcasts"] = { json: site.podcasts, text: site.podcastsText };
+  resources["/podcasts"] = { json: site.podcasts, text: site.podcastsText, cache: DEPLOYED };
   resources["/who"] = {
     json: async () => ({ users: await host.who() }),
     text: async () => whoText(await host.who()),

@@ -287,6 +287,20 @@ describe("offline (snapshots from data/)", () => {
     assert.equal((await app.get("//example.com/whoami?x=1")).body, "cd: The directory '//example.com/whoami' does not exist\n");
   });
 
+  test("what has live numbers is good for a minute, and what changes only with a deploy for an hour", async () => {
+    const good = async (url: string, accept = JSON_) => (await app.get(url, { accept })).headers.get("cache-control");
+    for (const url of ["/", "/index", "/whoami", "/contributions", "/src"]) assert.equal(await good(url), "public, max-age=60", url);
+    for (const url of ["/resume", "/dependency", "/name", "/talks", "/finger", "/podcasts"]) assert.equal(await good(url), "public, max-age=3600", url);
+    // In every format: the resume's PDF, the contact card, and a suffix's.
+    for (const [url, accept] of [
+      ["/resume", "application/pdf"],
+      ["/finger", "text/vcard"],
+      ["/talks.txt", "*/*"],
+    ])
+      assert.equal(await good(url, accept), "public, max-age=3600", url);
+    assert.equal(await good("/", "text/plain"), "public, max-age=60");
+  });
+
   test("406 when nothing acceptable", async () => {
     const res = await app.get("/resume", { accept: "image/png" });
     assert.equal(res.status, 406);

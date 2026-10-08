@@ -183,7 +183,7 @@ The site runs on [Cloudflare Workers](https://workers.cloudflare.com), free at t
 with these differences: `data/*.json` is bundled into the Worker, `public/` is served from Workers static assets (scripts, styles, and images
 straight from them, without running the Worker, with the headers in `public/_headers`), and the live numbers live in KV,
 refreshed every 15 minutes by a cron trigger, so a request never waits on RubyGems or GitHub. What the API answers is kept in Cloudflare's cache
-for as long as each response says it's good for (a minute, for most), and so is each page, though browsers still check for a new one
+for as long as each response says it's good for (a minute for what has live numbers, an hour for what changes only with a deploy), and so is each page, though browsers still check for a new one
 on every load: a page older than a minute is sent as it is, at once, and a new one is built for the next reader, so on a quiet day nobody waits
 for one. What isn't found is kept for a minute too. A page asks for its scripts and style under the commit that's deployed (`/v/<commit>/site.js`), where they never change, so a browser
 keeps them until the next deploy without checking. Until the first refresh, pages show the snapshots.
