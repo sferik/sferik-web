@@ -897,12 +897,15 @@ export function talksJsonLd(m: Talks): string {
 // that never heard back can send it again without it arriving twice. Until
 // the email has gone, though, the key is only being sent: the same message
 // again is told to ask later, not that it was sent, since it may yet not be.
+// And a key whose email didn't go through is kept for the minute its sender
+// must wait: sent again by then (by one who never heard that it failed), it's
+// told that it didn't go through, not that there's been one too many.
 export interface Host {
   beat(token: string, page: Page): Promise<Who>;
   who(): Promise<Session[]>;
-  mail(ip: string, key?: string): Promise<"ok" | "sent" | { why: "busy" | "full" | "sending"; wait: number }>;
+  mail(ip: string, key?: string): Promise<"ok" | "sent" | { why: "busy" | "full" | "sending" | "undelivered"; wait: number }>;
   delivered(key: string): Promise<void>; // a message with a key went through: the key is sent, for a day
-  unsent(key?: string): Promise<void>; // a message didn't go through: give back its place in the day's ration, and forget its key
+  unsent(key?: string): Promise<void>; // a message didn't go through: give back its place in the day's ration, and its key didn't, for a minute
 }
 // Where the host keeps its state: a Map for the Node server, a Durable
 // Object's storage on Workers.
@@ -932,6 +935,7 @@ const KEEP_KEYS = 864e5;
 // heard of again (delivered or unsent), so its key is free to be sent anew.
 const SENDING = 60e3;
 const ASK_AGAIN = 5; // seconds
+const UNDELIVERED = "the message didn't go through; try again later";
 
 // A ration by address that outlasts the host's memory: true if this one may
 // go on. On Workers it's a rate limit counted at Cloudflare's edge, since a
@@ -964,6 +968,16 @@ export function createHost(storage: HostStorage, now: () => number = Date.now, l
       }
     return all;
   }
+  // When each key under a prefix was kept, but for the ones kept longer ago than they're kept for, which are forgotten.
+  async function recent(prefix: string, keep: number) {
+    const all = await storage.list<number>({ prefix });
+    for (const [k, at] of all)
+      if (now() - at >= keep) {
+        all.delete(k);
+        await storage.delete(k);
+      }
+    return all;
+  }
   const name = (t: Tty) => `ttys${String(t.n).padStart(3, "0")}`;
   const sessions = (all: Map<string, Tty>): Session[] =>
     [...all.values()]
@@ -988,20 +1002,13 @@ export function createHost(storage: HostStorage, now: () => number = Date.now, l
     },
     who: async () => sessions(await ttys()),
     async mail(ip, key) {
-      const keys = await storage.list<number>({ prefix: "key:" });
-      for (const [k, at] of keys)
-        if (now() - at >= KEEP_KEYS) {
-          keys.delete(k);
-          await storage.delete(k);
-        }
+      const keys = await recent("key:", KEEP_KEYS);
       if (key && keys.has(`key:${key}`)) return "sent";
-      const sending = await storage.list<number>({ prefix: "sending:" });
-      for (const [k, at] of sending)
-        if (now() - at >= SENDING) {
-          sending.delete(k);
-          await storage.delete(k);
-        }
+      const sending = await recent("sending:", SENDING);
       if (key && sending.has(`sending:${key}`)) return { why: "sending", wait: ASK_AGAIN };
+      const failed = await recent("failed:", MAIL_EVERY);
+      const at = key && failed.get(`failed:${key}`);
+      if (at) return { why: "undelivered", wait: Math.ceil((at + MAIL_EVERY - now()) / 1000) };
       for (const [address, at] of sent) if (now() - at >= MAIL_EVERY) sent.delete(address);
       const last = sent.get(ip);
       if (last !== undefined) return { why: "busy", wait: Math.ceil((last + MAIL_EVERY - now()) / 1000) };
@@ -1019,7 +1026,10 @@ export function createHost(storage: HostStorage, now: () => number = Date.now, l
       await storage.put(`key:${key}`, now());
     },
     async unsent(key) {
-      if (key) await storage.delete(`sending:${key}`);
+      if (key) {
+        await storage.delete(`sending:${key}`);
+        await storage.put(`failed:${key}`, now());
+      }
       const day = `mail:${new Date(now()).toISOString().slice(0, 10)}`;
       const count = await storage.get<number>(day);
       if (count) await storage.put(day, count - 1);
@@ -1432,9 +1442,12 @@ export function createApp({
           busy: "one message a minute, please",
           full: "sferik has had enough messages for today; try again tomorrow",
           sending: "that message is still being sent; ask again in a moment",
+          undelivered: UNDELIVERED,
         }[ration.why];
         // Still being sent isn't too many: it's the same message, asked after too soon.
-        return say(ration.why === "sending" ? 409 : 429, message, ration.why, { "retry-after": String(ration.wait) });
+        // Nor is one that didn't go through: it's told so again, as it was the first time.
+        const status = { busy: 429, full: 429, sending: 409, undelivered: 502 }[ration.why];
+        return say(status, message, ration.why, { "retry-after": String(ration.wait) });
       }
       const tty = url.searchParams.get("tty");
       try {
@@ -1443,7 +1456,7 @@ export function createApp({
         console.error(err);
         await host.unsent(key);
         // In a minute, which is when the host takes another from this address.
-        return say(502, "the message didn't go through; try again later", "undelivered", { "retry-after": String(MAIL_EVERY / 1000) });
+        return say(502, UNDELIVERED, "undelivered", { "retry-after": String(MAIL_EVERY / 1000) });
       }
       if (key) await host.delivered(key);
       return say(202, "message sent to sferik");

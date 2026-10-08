@@ -1482,7 +1482,17 @@ describe("write", () => {
     const lost = await post(app, "hello", "", key);
     assert.deepEqual([lost.status, lost.headers.get("retry-after")], [502, "60"]);
     down = false;
-    time += 60e3; // when it said to
+    // Sent again before that, as by one who never heard that it failed, it's told so, and how much longer to wait.
+    time += 20e3;
+    const early = await post(app, "hello", "", { ...key, ...asJSON });
+    assert.deepEqual(
+      [...said(early), early.headers.get("retry-after")],
+      [502, { error: "the message didn't go through; try again later", code: "undelivered" }, "40"],
+    );
+    assert.equal((await post(app, "hello", "", { "idempotency-key": "another-key-0000" })).status, 429); // another message is one too many
+    time += 40e3 - 1;
+    assert.deepEqual([(await post(app, "hello", "", key)).headers.get("retry-after"), sent.length], ["1", 0]);
+    time += 1; // when it said to
     assert.deepEqual([(await post(app, "hello", "", key)).status, sent.length], [202, 1]);
     await app.close();
   });

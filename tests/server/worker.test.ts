@@ -663,6 +663,8 @@ describe("the Worker", () => {
 
   test("takes write's Idempotency-Key, so a message sent again isn't emailed twice, unless it didn't go through", async (t) => {
     stub(t, console, "error", () => {});
+    let clock = Date.UTC(2026, 9, 7);
+    stub(t, Date, "now", () => clock);
     const e = env();
     const key = { "idempotency-key": "0f8fad5b-d9cb-469f-a165-70867728950e", accept: "application/json" };
     const send = e.MAIL.send;
@@ -670,8 +672,12 @@ describe("the Worker", () => {
     const lost = await post(e, "/write", "hello", "192.0.2.1", key);
     assert.deepEqual([lost.status, await lost.json()], [502, { error: "the message didn't go through; try again later", code: "undelivered" }]);
     e.MAIL.send = send;
-    // From another address, since this one must wait a minute: the key was forgotten, so it's sent.
-    assert.deepEqual([(await post(e, "/write", "hello", "192.0.2.2", key)).status, e.sent.length], [202, 1]);
+    // Sent again within the minute, it's told again that it didn't go through. After it, the key is forgotten, so
+    // it's sent.
+    const early = await post(e, "/write", "hello", "192.0.2.1", key);
+    assert.deepEqual([early.status, early.headers.get("retry-after"), e.sent.length], [502, "60", 0]);
+    clock += 60e3;
+    assert.deepEqual([(await post(e, "/write", "hello", "192.0.2.1", key)).status, e.sent.length], [202, 1]);
     assert.deepEqual([(await post(e, "/write", "hello", "192.0.2.3", key)).status, e.sent.length], [202, 1]);
   });
 

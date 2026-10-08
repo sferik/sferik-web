@@ -491,7 +491,7 @@
       "post": {
         "operationId": "write",
         "summary": "Send Erik a message",
-        "description": "The shell's write sferik. The body is the message, as plain text (5,000 bytes at most), emailed on, with a Reply-To if it includes an email address. One message a minute from an address, and twenty a day in all. Answers in plain text, or in JSON for a client that prefers it. With an Idempotency-Key, a message that may not have arrived can be sent again: the same key within a day is the same message, which is answered as sent and not emailed twice. One asked after while it's still being sent is answered 409, with the seconds to wait before asking again. Same origin only.",
+        "description": "The shell's write sferik. The body is the message, as plain text (5,000 bytes at most), emailed on, with a Reply-To if it includes an email address. One message a minute from an address, and twenty a day in all. Answers in plain text, or in JSON for a client that prefers it. With an Idempotency-Key, a message that may not have arrived can be sent again: the same key within a day is the same message, which is answered as sent and not emailed twice. One asked after while it's still being sent is answered 409, with the seconds to wait before asking again, and one whose email didn't go through is answered 502 again, for the minute its sender must wait. Same origin only.",
         "parameters": [
           {
             "name": "tty",
