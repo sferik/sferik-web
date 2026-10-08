@@ -97,7 +97,7 @@ The whole API is described in OpenAPI 3.1 at [`/openapi.json`](https://sferik.ne
 Swagger UI, Postman, or a client generator. The server tests fetch every path in every format the spec lists and check each JSON response against its
 schema, so the spec can't drift from the API.
 
-Anything else gets `406 Not Acceptable`, listing the formats that resource has. Responses send `Vary: Accept`, and everything but the pages allows cross-origin requests.
+Anything else gets `406 Not Acceptable`, listing the formats that resource has. Responses send `Vary: Accept`, and everything but the pages allows cross-origin requests. An error is plain text, or JSON for a client that prefers it, with a `code` to tell it from the others by (`not_found`, `bad_path`, `method_not_allowed`, …).
 
 | Path             | What it is                                                                                            |
 | ---------------- | ----------------------------------------------------------------------------------------------------- |

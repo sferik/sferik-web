@@ -853,6 +853,15 @@
                   "type": "string"
                 },
                 "example": "Bad Request: the resource parameter is required\n"
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "the resource parameter is required",
+                  "code": "no_resource"
+                }
               }
             }
           },
@@ -864,6 +873,15 @@
                   "type": "string"
                 },
                 "example": "No such account: acct:someone@example.com\n"
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "No such account: acct:someone@example.com",
+                  "code": "no_account"
+                }
               }
             }
           }
@@ -1779,7 +1797,7 @@
       },
       "Error": {
         "type": "object",
-        "description": "What went wrong, for a client that asked for JSON",
+        "description": "What went wrong, for a client that asked for JSON (of any kind: application/jrd+json too). Any path may answer bad_path (400, a path that isn't properly percent-encoded), method_not_allowed (405), or internal (500).",
         "properties": {
           "error": {
             "type": "string",
@@ -1800,7 +1818,12 @@
               "undelivered",
               "unavailable",
               "not_found",
-              "cross_origin"
+              "cross_origin",
+              "bad_path",
+              "method_not_allowed",
+              "no_resource",
+              "no_account",
+              "internal"
             ],
             "description": "Which error it is, for a program to tell it from the others"
           },

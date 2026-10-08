@@ -614,6 +614,17 @@ describe("offline (snapshots from data/)", () => {
     assert.equal((await app.get("/.well-known/webfinger?resource=acct:SFERIK@sferik.com")).status, 200);
     assert.equal((await app.get("/.well-known/webfinger?resource=acct:someone@sferik.net")).status, 404);
     assert.equal((await app.get("/.well-known/webfinger")).status, 400);
+    // What went wrong is in words for curl, and in JSON for a client that asked for WebFinger's own.
+    const JRD = "application/jrd+json";
+    assert.equal((await app.get("/.well-known/webfinger")).body, "Bad Request: the resource parameter is required\n");
+    assert.equal((await app.get("/.well-known/webfinger?resource=acct:someone@sferik.net")).body, "No such account: acct:someone@sferik.net\n");
+    const none = await app.get("/.well-known/webfinger", { accept: JRD });
+    assert.deepEqual(
+      [none.type, JSON.parse(none.body)],
+      ["application/json; charset=utf-8", { error: "the resource parameter is required", code: "no_resource" }],
+    );
+    const other = await app.get("/.well-known/webfinger?resource=acct:someone@sferik.net", { accept: JRD });
+    assert.deepEqual([other.status, JSON.parse(other.body)], [404, { error: "No such account: acct:someone@sferik.net", code: "no_account" }]);
   });
 
   test("the talks as an Atom feed", async () => {
@@ -675,6 +686,8 @@ describe("offline (snapshots from data/)", () => {
     const res = await app.get("/%E0%A4%A");
     assert.equal(res.status, 400);
     assert.equal(res.body, "Bad Request: the path isn't properly percent-encoded\n");
+    const json = await app.get("/%E0%A4%A", { accept: JSON_ });
+    assert.deepEqual([json.status, JSON.parse(json.body)], [400, { error: "the path isn't properly percent-encoded", code: "bad_path" }]);
   });
 
   test("finger as a contact card, for an address book", async () => {
@@ -716,6 +729,13 @@ describe("offline (snapshots from data/)", () => {
     const post = await app.get("/resume", { method: "POST" });
     assert.equal(post.status, 405);
     assert.equal(post.headers.get("allow"), "GET, HEAD, OPTIONS");
+    assert.equal(post.body, "Method Not Allowed\n");
+    // In JSON, for a client that prefers it, with a code to tell it by.
+    const json = await app.get("/resume", { method: "DELETE", accept: JSON_ });
+    assert.deepEqual(
+      [json.status, json.headers.get("allow"), JSON.parse(json.body)],
+      [405, "GET, HEAD, OPTIONS", { error: "Method Not Allowed", code: "method_not_allowed" }],
+    );
   });
 });
 
@@ -1037,12 +1057,16 @@ describe("live data", () => {
     const errors = stub(t, console, "error", () => {});
     const app = await serve({ offline: true, files: nodeFiles(fs.mkdtempSync(path.join(os.tmpdir(), "sferik-"))) }); // no data/
     const res = await app.get("/whoami", { accept: JSON_ });
-    assert.equal(res.status, 500);
-    assert.equal(res.body, "Internal Server Error\n");
+    assert.deepEqual(
+      [res.status, res.type, JSON.parse(res.body)],
+      [500, "application/json; charset=utf-8", { error: "Internal Server Error", code: "internal" }],
+    );
+    const text = await app.get("/whoami");
+    assert.deepEqual([text.status, text.type, text.body], [500, "text/plain; charset=utf-8", "Internal Server Error\n"]);
     // With the headers everything else has, to any origin.
     assert.match(res.headers.get("content-security-policy")!, /^default-src 'self'/);
     assert.deepEqual([res.headers.get("x-content-type-options"), res.headers.get("access-control-allow-origin")], ["nosniff", "*"]);
-    assert.equal(errors.calls, 1);
+    assert.equal(errors.calls, 2);
     assert.equal((await app.get("/whoami", { accept: JSON_ })).status, 500);
     await app.close();
   });

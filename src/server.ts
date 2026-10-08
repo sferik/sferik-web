@@ -1184,6 +1184,13 @@ export function negotiate(accept: string | undefined, formats: Format[] = ["html
 // answer for both.
 export const asksFor = (accept: string | undefined): string => (Object.keys(MEDIA) as Format[]).map(wanted(accept)).join(",");
 
+// Whether a client would rather be told in JSON than in plain text, which is
+// how an error is told, and what the two POSTs say. Any JSON at all is JSON
+// here: WebFinger's has a type of its own (application/jrd+json), and a client
+// that asks for that wants to read what went wrong the same way.
+const ANY_JSON = /\bapplication\/[\w.-]+\+json\b/gi;
+const prefersJson = (req: IncomingMessage) => negotiate(req.headers.accept?.replace(ANY_JSON, "application/json"), ["text", "json"]) === "json";
+
 // ------------------------------------------------------------ the app
 
 const TYPES: Record<string, string> = {
@@ -1360,6 +1367,11 @@ export function createApp({
       res.end(req.method === "HEAD" || fresh ? undefined : gzip ? gzipSync(body) : body);
     };
     const cors = CORS;
+    // What the two POSTs say, and every error: plain text, or JSON for a client
+    // that prefers it, where an error has a code a program can tell it from the
+    // others by.
+    const answer = (status: number, text: string, json: object, extra?: Record<string, string>) =>
+      prefersJson(req) ? send(status, CONTENT_TYPE.json, JSON.stringify(json) + "\n", extra) : send(status, CONTENT_TYPE.text, text, extra);
     if (req.method === "OPTIONS") {
       return send(204, "text/plain", "", {
         ...cors,
@@ -1377,15 +1389,10 @@ export function createApp({
     try {
       pathname = decodeURIComponent(url.pathname).replace(/\/+$/, "") || "/";
     } catch {
-      return send(400, "text/plain; charset=utf-8", "Bad Request: the path isn't properly percent-encoded\n", cors);
+      const error = "the path isn't properly percent-encoded";
+      return answer(400, `Bad Request: ${error}\n`, { error, code: "bad_path" }, cors);
     }
 
-    // What the two POSTs say: plain text, or JSON for a client that prefers it,
-    // where an error has a code a program can tell it from the others by.
-    const answer = (status: number, text: string, json: object, extra?: Record<string, string>) =>
-      negotiate(req.headers.accept, ["text", "json"]) === "json"
-        ? send(status, CONTENT_TYPE.json, JSON.stringify(json) + "\n", extra)
-        : send(status, CONTENT_TYPE.text, text, extra);
     // The two POSTs are for the site's own pages (and for curl, which says
     // nothing of where it's from). Another site's page can't read the answer,
     // but without this it could still send one: a form needs no permission.
@@ -1441,7 +1448,8 @@ export function createApp({
       if (key) await host.delivered(key);
       return say(202, "message sent to sferik");
     }
-    if (req.method !== "GET" && req.method !== "HEAD") return send(405, "text/plain; charset=utf-8", "Method Not Allowed\n", { allow: "GET, HEAD, OPTIONS" });
+    if (req.method !== "GET" && req.method !== "HEAD")
+      return answer(405, "Method Not Allowed\n", { error: "Method Not Allowed", code: "method_not_allowed" }, { allow: "GET, HEAD, OPTIONS" });
     // The API's description, for API tools (and cross-origin, like the API itself).
     if (pathname === "/openapi.json") {
       return send(200, "application/openapi+json; charset=utf-8", await asset("openapi.json"), {
@@ -1451,8 +1459,11 @@ export function createApp({
     }
     if (pathname === "/.well-known/webfinger") {
       const account = url.searchParams.get("resource");
-      if (!account) return send(400, "text/plain; charset=utf-8", "Bad Request: the resource parameter is required\n", cors);
-      if (!ACCOUNT.test(account)) return send(404, "text/plain; charset=utf-8", `No such account: ${account}\n`, cors);
+      if (!account) {
+        const error = "the resource parameter is required";
+        return answer(400, `Bad Request: ${error}\n`, { error, code: "no_resource" }, cors);
+      }
+      if (!ACCOUNT.test(account)) return answer(404, `No such account: ${account}\n`, { error: `No such account: ${account}`, code: "no_account" }, cors);
       return send(200, "application/jrd+json; charset=utf-8", JSON.stringify(WEBFINGER, null, 2) + "\n", { ...cors, "cache-control": "public, max-age=3600" });
     }
     // Where to report a security problem with the site (RFC 9116), which is to
@@ -1574,8 +1585,9 @@ export function createApp({
   return (req: IncomingMessage, res: ServerResponse) =>
     handle(req, res).catch((err: unknown) => {
       console.error(err);
-      res.writeHead(500, { "content-type": "text/plain; charset=utf-8", ...SECURITY_HEADERS, ...CORS });
-      res.end("Internal Server Error\n");
+      const json = prefersJson(req);
+      res.writeHead(500, { "content-type": json ? CONTENT_TYPE.json : CONTENT_TYPE.text, ...SECURITY_HEADERS, ...CORS });
+      res.end(json ? JSON.stringify({ error: "Internal Server Error", code: "internal" }) + "\n" : "Internal Server Error\n");
     });
 }
 
