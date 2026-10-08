@@ -911,7 +911,7 @@ describe("live data", () => {
       ...Object.fromEntries(REPOS.map((_, i) => [`r${i}`, { stargazerCount: 100 + i }])),
     },
   });
-  type Graph = { live: boolean; total: number; contributions: { level: number }[]; lastPush: { repo: string; sha: string; at: string } | null };
+  type Graph = { live: boolean; asOf: string; total: number; contributions: { level: number }[]; lastPush: { repo: string; sha: string; at: string } | null };
   type Project = { name: string; stars: number | null };
   const graphOf = async (app: App) => JSON.parse((await app.get("/contributions", { accept: JSON_ })).body) as Graph;
   const projectsOf = async (app: App) => (JSON.parse((await app.get("/src", { accept: JSON_ })).body) as { projects: Project[] }).projects;
@@ -1122,6 +1122,29 @@ describe("live data", () => {
     await reader.close();
   });
 
+  test("numbers that are loaded again, and haven't changed, are the same response until the hour does", async () => {
+    const saved = new Map<string, unknown>();
+    const store = { get: async (key: string) => saved.get(key), put: async (key: string, value: unknown) => void saved.set(key, value) };
+    const refresh = async (at: string) => {
+      const app = await serve({ fetch: fakeNet().fetch, store, refresh: true, now: () => Date.parse(at) });
+      await graphOf(app);
+      await app.close();
+    };
+    const reader = await serve({ fetch: () => assert.fail("a request asked"), store, now: () => Date.parse("2026-10-08T13:10:00Z") });
+    await refresh("2026-10-08T12:15:07Z");
+    const first = await reader.get("/contributions", { accept: JSON_ });
+    assert.equal((JSON.parse(first.body) as Graph).asOf, "2026-10-08T12:00:00Z");
+    // A quarter of an hour on, they're loaded again, and are what they were: so is what says them.
+    await refresh("2026-10-08T12:30:09Z");
+    const again = await reader.get("/contributions", { accept: JSON_, headers: { "if-none-match": first.headers.get("etag")! } });
+    assert.deepEqual([again.status, again.body], [304, ""]);
+    // In the next hour, they're as of that.
+    await refresh("2026-10-08T13:00:02Z");
+    const next = await reader.get("/contributions", { accept: JSON_, headers: { "if-none-match": first.headers.get("etag")! } });
+    assert.deepEqual([next.status, (JSON.parse(next.body) as Graph).asOf], [200, "2026-10-08T13:00:00Z"]);
+    await reader.close();
+  });
+
   test("with a store, a refresh notes what became of asking GitHub with the token, for the requests that read it", async (t) => {
     stub(t, console, "error", () => {});
     const saved = new Map<string, unknown>();
@@ -1243,12 +1266,12 @@ describe("live data", () => {
     assert.equal(net.calls.length, 0); // never fetched during a request
     await reader.close();
 
-    const refresher = await serve({ fetch: net.fetch, store, refresh: true, now: () => Date.parse("2026-10-06T20:00:00.500Z") });
+    const refresher = await serve({ fetch: net.fetch, store, refresh: true, now: () => Date.parse("2026-10-06T20:14:30.500Z") });
     await refresher.get("/whoami", { accept: JSON_ });
     assert.deepEqual(saved.get("gems"), { multi_json: 2, multi_xml: 0 });
     await refresher.close();
-    // It notes when, which is what the numbers are as of: to the second. They're live for two hours after.
-    let clock = Date.parse("2026-10-06T22:00:00.499Z");
+    // It notes when, which is what the numbers are as of: to the hour. They're live for two hours after it loaded them.
+    let clock = Date.parse("2026-10-06T22:14:30.499Z");
     const later = await serve({ fetch: net.fetch, store, now: () => clock });
     const src = async () => {
       const { asOf, live } = JSON.parse((await later.get("/src", { accept: JSON_ })).body) as { asOf: string; live: boolean };

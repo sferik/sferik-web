@@ -157,7 +157,8 @@ describe("the Worker", () => {
 
     const src = (await json(e, "/src")) as { live: boolean; total: { downloads: number }; asOf: string };
     assert.deepEqual([src.live, src.total.downloads], [true, 7]);
-    assert.ok(Date.now() - Date.parse(src.asOf) < 60e3); // as of the refresh
+    assert.ok(Date.now() - Date.parse(src.asOf) < 3600e3); // as of the refresh, to the hour
+    assert.match(src.asOf, /:00:00Z$/);
     const graph = (await json(e, "/contributions")) as { live: boolean; total: number; lastPush: { sha: string } };
     assert.deepEqual([graph.live, graph.total, graph.lastPush.sha], [true, 3, "abc1234"]);
     assert.equal((await json(e, "/whoami")).multiDownloads, 7);

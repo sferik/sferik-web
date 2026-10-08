@@ -77,7 +77,7 @@ export interface Contributions {
   since: number;
   lastPush: Push | null;
   live: boolean;
-  asOf: string; // when the graph was fetched, or the last day of the snapshot
+  asOf: string; // the hour the graph was fetched in, or the last day of the snapshot
 }
 
 export interface Project {
@@ -94,7 +94,7 @@ export interface Src {
   total: { downloads: number; gems: number; stars: number };
   more: string;
   live: boolean;
-  asOf: string; // when the downloads were fetched, or the day of the snapshot
+  asOf: string; // the hour the downloads were fetched in, or the day of the snapshot
 }
 
 export interface NameChange {

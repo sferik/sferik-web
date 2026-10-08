@@ -371,8 +371,15 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh, about
     return when === undefined ? undefined : seconds(new Date(when));
   };
   return {
-    // What it's in says so (asOf).
-    at,
+    // What a value is as of, if it has been loaded, which what it's in says (asOf): the hour it was loaded in,
+    // not the second. A value is loaded far more often than it changes (on Workers, every fifteen minutes), and
+    // with the second in it, what it's in was another response each time, to be sent whole to whoever asked
+    // whether theirs had changed (If-None-Match): a year of contributions, for a time. To the hour, it's the same
+    // response until the numbers change, or the hour does. (/status says when each was loaded, to the second.)
+    async asOf(key: Value): Promise<string | undefined> {
+      const when = await loaded(key);
+      return when === undefined ? undefined : seconds(new Date(Math.floor(when / HOUR) * HOUR));
+    },
     // When each value was last loaded, or null for one that never has been
     // (/status says). What they're in says so of the downloads and the
     // contributions alone (asOf, and live): the stars and the last push could
@@ -471,8 +478,8 @@ function createModules({ live, read, art }: { live: Live; read: Read; art: () =>
       more: data.more,
       // Whether the downloads are: not the snapshot, nor what was last fetched hours ago.
       live: await live.fresh("gems"),
-      // When the downloads were fetched, or the day of the snapshot.
-      asOf: (await live.at("gems")) ?? `${data.snapshot}T00:00:00Z`,
+      // The hour the downloads were fetched in, or the day of the snapshot.
+      asOf: (await live.asOf("gems")) ?? `${data.snapshot}T00:00:00Z`,
     };
   }
 
@@ -504,8 +511,8 @@ function createModules({ live, read, art }: { live: Live; read: Read; art: () =>
         lastPush: push ?? null,
         // Whether the graph is: not the snapshot, nor what was last fetched hours ago.
         live: await live.fresh("contributions"),
-        // When the graph was fetched, or the last day of the snapshot.
-        asOf: (await live.at("contributions")) ?? `${snapshot.at(-1)!.date}T00:00:00Z`,
+        // The hour the graph was fetched in, or the last day of the snapshot.
+        asOf: (await live.asOf("contributions")) ?? `${snapshot.at(-1)!.date}T00:00:00Z`,
       };
     },
     src: projectsData,
