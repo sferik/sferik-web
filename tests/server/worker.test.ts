@@ -63,7 +63,7 @@ const UPSTREAM: Record<string, unknown> = {
     { name: "multi_xml", downloads: 0 },
   ],
   "https://github-contributions-api.jogruber.de/v4/sferik?y=last": { contributions: [{ date: "2026-10-01", count: 3, level: 2 }] },
-  "https://api.github.com/users/sferik/events/public?per_page=30": [
+  "https://api.github.com/users/sferik/events/public?per_page=100": [
     { type: "PushEvent", repo: { name: "sferik/x-ruby" }, payload: { head: "abc1234" }, created_at: "2026-10-01T12:00:00Z" },
   ],
 };

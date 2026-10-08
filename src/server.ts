@@ -266,9 +266,15 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh }: Liv
     lastPush: () =>
       cached("push", 5 * 60e3, async (): Promise<Push> => {
         type Event = { type: string; repo: { name: string }; payload?: { head?: string }; created_at: string };
-        const events = await getJSON<Event[]>("https://api.github.com/users/sferik/events/public?per_page=30");
-        const ev = events.find((e) => e.type === "PushEvent" && e.payload?.head);
-        // The latest thirty events may have no push among them (a day of
+        const events = await getJSON<Event[]>("https://api.github.com/users/sferik/events/public?per_page=100");
+        // GitHub lists the latest events, but not the latest first: a push
+        // from last night can come after one from yesterday morning. So the
+        // latest push is the one that says so, not the first in the list.
+        // (The times are all written the same way, so the later is the greater.)
+        const ev = events
+          .filter((e) => e.type === "PushEvent" && e.payload?.head)
+          .reduce<Event | undefined>((latest, e) => (latest && latest.created_at >= e.created_at ? latest : e), undefined);
+        // The latest hundred events may have no push among them (days of
         // reviews and issues), which doesn't undo the last one: that's a load
         // that failed, so the push already known is kept.
         if (!ev) throw new Error("GitHub: no push in the latest events");

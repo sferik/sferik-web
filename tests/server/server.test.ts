@@ -107,7 +107,7 @@ function fakeNet(overrides: Record<string, Fixture> = {}) {
         { date: "2025-10-03", count: 5, level: 4 },
       ],
     },
-    "https://api.github.com/users/sferik/events/public?per_page=30": [
+    "https://api.github.com/users/sferik/events/public?per_page=100": [
       { type: "WatchEvent", repo: { name: "a/b" } },
       { type: "PushEvent", repo: { name: "sferik/x-ruby" }, payload: { head: "abc1234def5678" }, created_at: "2026-10-01T12:00:00Z" },
     ],
@@ -939,7 +939,7 @@ describe("live data", () => {
     const net = fakeNet({
       "https://rubygems.org/api/v1/owners/sferik/gems.json": 503,
       "https://github-contributions-api.jogruber.de/v4/sferik?y=last": new Error("down"),
-      "https://api.github.com/users/sferik/events/public?per_page=30": hang,
+      "https://api.github.com/users/sferik/events/public?per_page=100": hang,
     });
     const app = await serve({ fetch: net.fetch, timeout: 20 });
     const src = JSON.parse((await app.get("/src", { accept: JSON_ })).body);
@@ -1072,16 +1072,33 @@ describe("live data", () => {
   });
 
   test("no recent push means no lastPush", async () => {
-    const net = fakeNet({ "https://api.github.com/users/sferik/events/public?per_page=30": [{ type: "WatchEvent", repo: { name: "a/b" } }] });
+    const net = fakeNet({ "https://api.github.com/users/sferik/events/public?per_page=100": [{ type: "WatchEvent", repo: { name: "a/b" } }] });
     const app = await serve({ fetch: net.fetch });
     assert.equal(JSON.parse((await app.get("/contributions", { accept: JSON_ })).body).lastPush, null);
+    await app.close();
+  });
+
+  test("the last push is the latest of the events, wherever in the list GitHub puts it", async () => {
+    const push = (head: string, created_at: string) => ({ type: "PushEvent", repo: { name: "sferik/x-ruby" }, payload: { head }, created_at });
+    const events = [
+      push("second", "2026-10-08T00:27:41Z"),
+      { type: "WatchEvent", repo: { name: "a/b" }, created_at: "2026-10-09T00:00:00Z" },
+      push("first", "2026-10-07T18:06:59Z"),
+      push("latest", "2026-10-08T03:52:49Z"),
+      { type: "PushEvent", repo: { name: "a/b" }, payload: {}, created_at: "2026-10-09T00:00:00Z" }, // a push of nothing
+      push("third", "2026-10-08T00:59:45Z"),
+    ];
+    const net = fakeNet({ "https://api.github.com/users/sferik/events/public?per_page=100": events });
+    const app = await serve({ fetch: net.fetch });
+    const graph = JSON.parse((await app.get("/contributions", { accept: JSON_ })).body);
+    assert.deepEqual(graph.lastPush, { repo: "sferik/x-ruby", sha: "latest", at: "2026-10-08T03:52:49Z" });
     await app.close();
   });
 
   test("keeps the last push when the latest events have none", async () => {
     let clock = 0;
     let events: object[] = [{ type: "PushEvent", repo: { name: "sferik/x-ruby" }, payload: { head: "abc1234def5678" }, created_at: "2026-10-01T12:00:00Z" }];
-    const net = fakeNet({ "https://api.github.com/users/sferik/events/public?per_page=30": () => Promise.resolve(Response.json(events)) });
+    const net = fakeNet({ "https://api.github.com/users/sferik/events/public?per_page=100": () => Promise.resolve(Response.json(events)) });
     const app = await serve({ fetch: net.fetch, now: () => clock });
     const push = async () => JSON.parse((await app.get("/contributions", { accept: JSON_ })).body).lastPush;
     assert.equal((await push()).sha, "abc1234def5678");
