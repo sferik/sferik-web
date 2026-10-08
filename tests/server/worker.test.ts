@@ -163,6 +163,25 @@ describe("the Worker", () => {
     assert.equal((await json(e, "/whoami")).multiDownloads, 7);
   });
 
+  test("a refresh asks RubyGems while GitHub answers, not after", async (t) => {
+    // GitHub's contributions take until RubyGems has been asked, or a while, whichever comes first.
+    let asked!: () => void;
+    const rubygems = new Promise<string>((resolve) => (asked = () => resolve("asked")));
+    let found: string | undefined;
+    const slow = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.startsWith("https://rubygems.org/")) asked();
+      if (url.startsWith("https://github-contributions-api."))
+        found = await Promise.race([rubygems, new Promise<string>((r) => setTimeout(r, 200, "waiting"))]);
+      return upstream(input);
+    }) as typeof globalThis.fetch;
+    stub(t, globalThis, "fetch", slow);
+    const e = env();
+    await worker.scheduled(undefined, e);
+    assert.equal(found, "asked");
+    assert.equal(((await json(e, "/src")) as { total: { downloads: number } }).total.downloads, 7);
+  });
+
   test("a refresh keeps the old value of what it couldn't load, and drops what nothing asks for any more", async (t) => {
     const errors = stub(t, console, "error", () => {});
     const e = env();

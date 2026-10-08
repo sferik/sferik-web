@@ -348,10 +348,12 @@ export default {
   },
 
   // The cron trigger (wrangler.jsonc): fetch every live value and save them.
+  // The pages are asked for together, so RubyGems is asked while GitHub
+  // answers, and neither waits for the other.
   async scheduled(_controller: unknown, env: Env): Promise<void> {
     const store = kvStore(env.LIVE);
     const app = createApp({ files: files(env), store, refresh: true, token: env.GITHUB_TOKEN });
-    for (const path of LIVE_PATHS) await serve(app, new Request(`https://sferik.net${path}`, { headers: { accept: "application/json" } }));
+    await Promise.all(LIVE_PATHS.map((path) => serve(app, new Request(`https://sferik.net${path}`, { headers: { accept: "application/json" } }))));
     await store.save();
   },
 };
