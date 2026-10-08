@@ -161,7 +161,12 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh, about
     const t = setTimeout(() => timer.abort(), wait);
     try {
       const res = await fetch(url, { ...init, headers, signal: timer.signal });
-      if (!res.ok) throw new Error(`${url}: ${res.status}`);
+      if (!res.ok) {
+        // Read, though it's not wanted: on Workers only six requests may be on their way at a time, and one
+        // whose response is left unread holds its place until the runtime gives up on it.
+        await res.text();
+        throw new Error(`${url}: ${res.status}`);
+      }
       return (await res.json()) as T;
     } finally {
       clearTimeout(t);
