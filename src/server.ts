@@ -1664,7 +1664,7 @@ export function createApp({
     if (pathname === "/openapi.json") {
       return send(200, "application/openapi+json; charset=utf-8", await asset("openapi.json"), {
         ...cors,
-        "cache-control": "public, max-age=300",
+        "cache-control": DEPLOYED, // it changes only with a deploy
       });
     }
     if (pathname === "/.well-known/webfinger") {

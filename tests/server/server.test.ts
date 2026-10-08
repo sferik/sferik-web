@@ -324,6 +324,8 @@ describe("offline (snapshots from data/)", () => {
     ])
       assert.equal(await good(url, accept), "public, max-age=3600", url);
     assert.equal(await good("/", "text/plain"), "public, max-age=300");
+    // And the API's description, which is a file of the deploy's.
+    assert.equal(await good("/openapi.json"), "public, max-age=3600");
   });
 
   test("what the API answers says where its description is, and a page doesn't, which says so in its HTML", async () => {
