@@ -1485,7 +1485,9 @@ const COMMANDS: Record<string, Command> = table<Command>({
     let url;
     try {
       if (/\s/.test(raw)) throw new TypeError(raw);
-      url = new URL(/^[a-z]+:\/\//i.test(raw) ? raw : `http://${raw}`);
+      // With no scheme, it's https, where curl's own guess is http: a page
+      // that came by https can't ask for anything by http, so that never worked.
+      url = new URL(/^[a-z]+:\/\//i.test(raw) ? raw : `https://${raw}`);
     } catch {
       return fail(`curl: (3) URL rejected: Malformed input to a URL function`, 3);
     }

@@ -829,6 +829,9 @@ test.describe("network", () => {
         route.fulfill({ status: 418, body: "short and stout", headers: { "access-control-allow-origin": "*" } }),
       );
       expect(await result(page, "curl -i https://api.example.com/teapot")).toMatch(/^HTTP\/1\.1 418 [^\n]*\n[\s\S]*short and stout$/);
+      // With no scheme it's https, since nothing here can be asked for by http.
+      expect(await result(page, "curl api.example.com/teapot")).toBe("short and stout");
+      expect(await result(page, "curl blocked.example.com")).toContain("port 443:");
       expect(await result(page, "curl https://blocked.example.com/")).toBe(
         "curl: (7) Failed to connect to blocked.example.com port 443: Couldn't connect to server",
       );
