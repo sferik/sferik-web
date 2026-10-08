@@ -1294,12 +1294,14 @@ export function createApp({
     cache?: string;
   }
   // How long a resource is good for. One with live numbers in it (and the
-  // home page's text has every module's) is good for a minute. The rest
-  // change only with a deploy, so they're good for an hour, as the feed and
-  // the motto are. On Workers, Cloudflare's cache starts over with each
+  // home page's text has every module's) is good for five minutes: on
+  // Workers the numbers are refreshed every fifteen, so it's rarely behind
+  // them, and never by more than five. The rest change only with a deploy,
+  // so they're good for an hour, as the feed and the motto are. On Workers, Cloudflare's cache starts over with each
   // deploy, so what it answers with is never from before one; a browser, or
   // a client that keeps what it's told, may be an hour behind.
   const LIVE: ModuleId[] = ["whoami", "contributions", "src"];
+  const LIVE_FOR = "public, max-age=300";
   const DEPLOYED = "public, max-age=3600";
   const resources: Record<string, Resource> = {
     "/": { json: site.home, text: site.homeText },
@@ -1518,7 +1520,7 @@ export function createApp({
       }
       const headers = {
         ...vary,
-        "cache-control": resource.cache ?? "public, max-age=60",
+        "cache-control": resource.cache ?? LIVE_FOR,
         ...(FILENAME[format] && { "content-disposition": `inline; filename="${FILENAME[format]}"` }),
       };
       const body =

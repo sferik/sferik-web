@@ -287,9 +287,9 @@ describe("offline (snapshots from data/)", () => {
     assert.equal((await app.get("//example.com/whoami?x=1")).body, "cd: The directory '//example.com/whoami' does not exist\n");
   });
 
-  test("what has live numbers is good for a minute, and what changes only with a deploy for an hour", async () => {
+  test("what has live numbers is good for five minutes, and what changes only with a deploy for an hour", async () => {
     const good = async (url: string, accept = JSON_) => (await app.get(url, { accept })).headers.get("cache-control");
-    for (const url of ["/", "/index", "/whoami", "/contributions", "/src"]) assert.equal(await good(url), "public, max-age=60", url);
+    for (const url of ["/", "/index", "/whoami", "/contributions", "/src"]) assert.equal(await good(url), "public, max-age=300", url);
     for (const url of ["/resume", "/dependency", "/name", "/talks", "/finger", "/podcasts"]) assert.equal(await good(url), "public, max-age=3600", url);
     // In every format: the resume's PDF, the contact card, and a suffix's.
     for (const [url, accept] of [
@@ -298,7 +298,7 @@ describe("offline (snapshots from data/)", () => {
       ["/talks.txt", "*/*"],
     ])
       assert.equal(await good(url, accept), "public, max-age=3600", url);
-    assert.equal(await good("/", "text/plain"), "public, max-age=60");
+    assert.equal(await good("/", "text/plain"), "public, max-age=300");
   });
 
   test("406 when nothing acceptable", async () => {

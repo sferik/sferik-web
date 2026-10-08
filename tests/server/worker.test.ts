@@ -280,7 +280,7 @@ describe("the Worker", () => {
     // It says how long it's good for as the first did, not as the cache does.
     e.LIVE.get = () => Promise.reject(new Error("KV was read"));
     const again = await get(e, "/whoami", "application/json");
-    assert.deepEqual([again.headers.get("cache-control"), again.headers.get("x-own-cache-control")], ["public, max-age=60", null]);
+    assert.deepEqual([again.headers.get("cache-control"), again.headers.get("x-own-cache-control")], ["public, max-age=300", null]);
     assert.equal(await again.text(), first);
     // So does the same asked for in other words, or with a query that changes nothing.
     assert.equal(await (await get(e, "/whoami", "Application/JSON; q=1")).text(), first);
@@ -326,7 +326,7 @@ describe("the Worker", () => {
     const head = await get(e, "/whoami", "application/json", "HEAD");
     assert.deepEqual(
       [head.status, head.headers.get("cache-control"), head.headers.get("etag"), await head.text()],
-      [200, "public, max-age=60", again.headers.get("etag"), ""],
+      [200, "public, max-age=300", again.headers.get("etag"), ""],
     );
     e.LIVE.get = async () => null;
     assert.equal((await get(e, "/name", "application/json", "HEAD")).status, 200);
