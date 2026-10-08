@@ -12,7 +12,9 @@
  *
  * Live numbers (downloads, stars, contributions, the latest push) are fetched
  * from RubyGems and GitHub on the server, cached, and fall back to the
- * snapshots in data/ when those services are slow or down.
+ * snapshots in data/ when those services are slow or down. /status says
+ * whether GitHub answers with the server's token, since the numbers come
+ * without it too.
  *
  * No dependencies: node src/server.ts (Node strips the types), then open
  * http://localhost:3745. The same app runs on Cloudflare Workers (src/worker.ts),
@@ -238,9 +240,25 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh, about
     repositories
       .flatMap((r) => (r?.defaultBranchRef?.target.history.nodes ?? []).map((c): Push => ({ repo: r!.nameWithOwner, sha: c.oid, at: c.committedDate })))
       .reduce<Push | undefined>((last, push) => (last && last.at >= push.at ? last : push), undefined);
+  // What became of asking GitHub this way: when it was last asked, when it
+  // last answered, and what went wrong if it didn't (/status says). The
+  // numbers don't: asked for the other ways, they come all the same, so a token
+  // that has expired would otherwise say so nowhere but in the log.
+  interface Asked {
+    asked: number;
+    answered?: number;
+    error?: string;
+  }
+  let noted: Asked | undefined;
+  const known = async () => (store ? ((await store.get("github")) as Asked | undefined) : noted);
+  const note = async (next: Asked) => {
+    if (store) await store.put("github", next);
+    else noted = next;
+  };
   let asked: { at: number; answer: Promise<GitHub> } | undefined;
   function github(): Promise<GitHub> {
     if (!asked || now() - asked.at >= 60e3) {
+      const at = now();
       const answer = about().then(async ({ repos, email }): Promise<GitHub> => {
         const { data, errors } = await graphql<Answered & Record<string, { stargazerCount: number } | null>>(everything(repos, email), 3 * timeout);
         const calendar = data.user?.contributionsCollection?.contributionCalendar;
@@ -254,8 +272,18 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh, about
       });
       // With a token, GitHub is asked this way first, and the other ways if it
       // fails: which get the numbers, so nothing else would say that it has.
-      answer.catch((err: unknown) => console.error("GitHub, with the token:", err));
-      asked = { at: now(), answer };
+      const told = answer.then(
+        async (all) => {
+          await note({ asked: at, answered: at });
+          return all;
+        },
+        async (err: unknown) => {
+          console.error("GitHub, with the token:", err);
+          await note({ asked: at, answered: (await known())?.answered, error: (err as Error).message });
+          throw err;
+        },
+      );
+      asked = { at, answer: told };
     }
     return asked.answer;
   }
@@ -345,6 +373,14 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh, about
     // once, and is the last that was known, not what's so now.
     async fresh(key: "gems" | "contributions"): Promise<boolean> {
       return now() - ((await loaded(key)) ?? -Infinity) < 2 * HOUR;
+    },
+    // What became of asking GitHub with the token: when it was last asked,
+    // when it last answered, and what it said went wrong if it didn't. None
+    // of them, without a token, or before it's been asked.
+    async token(): Promise<{ asked: string | null; answered: string | null; error: string | null }> {
+      const said = await known();
+      const time = (at: number | undefined) => (at === undefined ? null : seconds(new Date(at)));
+      return { asked: time(said?.asked), answered: time(said?.answered), error: said?.error ?? null };
     },
     // Every gem @sferik owns: name → downloads.
     gems: () =>
@@ -1434,8 +1470,9 @@ export function createApp({
     email: (await read("profile")).email,
   });
   const figletFont = async () => (font ??= parseFont(new TextDecoder().decode(await asset("share/standard.flf"))));
+  const live = createLive({ fetch, offline, now, timeout, token, store, refresh, about });
   const site = createModules({
-    live: createLive({ fetch, offline, now, timeout, token, store, refresh, about }),
+    live,
     read,
     art: async () => figletArt(await figletFont()),
   });
@@ -1642,6 +1679,11 @@ export function createApp({
       const { commit = null, deployed = null } = version;
       const body = { commit, deployed, url: commit && `https://github.com/sferik/sferik-web/commit/${commit}` };
       return send(200, "application/json; charset=utf-8", JSON.stringify(body, null, 2) + "\n", { ...cors, "cache-control": "no-cache" });
+    }
+    // Whether the live numbers come the way they should: GitHub's, with the token (see createLive).
+    if (pathname === "/status") {
+      const body = { github: await live.token() };
+      return send(200, "application/json; charset=utf-8", JSON.stringify(body, null, 2) + "\n", { ...cors, "cache-control": LIVE_FOR });
     }
     if (pathname === "/.signature")
       return send(200, "text/plain; charset=utf-8", signature((await read("profile")) as Profile), { ...cors, "cache-control": "public, max-age=3600" });

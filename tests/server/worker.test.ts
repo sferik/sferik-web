@@ -182,6 +182,21 @@ describe("the Worker", () => {
     assert.equal(((await json(e, "/src")) as { total: { downloads: number } }).total.downloads, 7);
   });
 
+  test("a refresh notes whether GitHub answered with the token, which /status says", async (t) => {
+    stub(t, console, "error", () => {});
+    const expired = (async (input: string | URL | Request) =>
+      String(input) === "https://api.github.com/graphql" ? new Response("", { status: 401 }) : upstream(input)) as typeof globalThis.fetch;
+    stub(t, globalThis, "fetch", expired);
+    const e = { ...env(), GITHUB_TOKEN: "secret" };
+    assert.deepEqual(await json(e, "/status"), { github: { asked: null, answered: null, error: null } });
+    await worker.scheduled(undefined, e);
+    const { github } = (await json(e, "/status")) as { github: { asked: string; answered: null; error: string } };
+    assert.ok(Date.now() - Date.parse(github.asked) < 60e3);
+    assert.deepEqual([github.answered, github.error], [null, "https://api.github.com/graphql: 401"]);
+    // The numbers came all the same, the other ways.
+    assert.equal(((await json(e, "/contributions")) as { live: boolean }).live, true);
+  });
+
   test("a refresh keeps the old value of what it couldn't load, and drops what nothing asks for any more", async (t) => {
     const errors = stub(t, console, "error", () => {});
     const e = env();

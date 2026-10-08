@@ -1045,6 +1045,74 @@ describe("live data", () => {
     await other.close();
   });
 
+  test("/status says when GitHub last answered with the token, and what went wrong when it doesn't", async (t) => {
+    stub(t, console, "error", () => {});
+    const statusOf = async (app: App) => {
+      const res = await app.get("/status");
+      assert.deepEqual(
+        [res.status, res.type, res.headers.get("cache-control"), res.headers.get("access-control-allow-origin")],
+        [200, "application/json; charset=utf-8", "public, max-age=300", "*"],
+      );
+      return (JSON.parse(res.body) as { github: unknown }).github;
+    };
+    // Without a token, GitHub is never asked with one.
+    const anonymous = await serve({ fetch: fakeNet().fetch });
+    await graphOf(anonymous);
+    assert.deepEqual(await statusOf(anonymous), { asked: null, answered: null, error: null });
+    await anonymous.close();
+
+    let clock = Date.parse("2026-10-08T12:00:00.250Z");
+    let answer: () => Response = () => Response.json(answered());
+    const app = await serve({ fetch: fakeNet({ "https://api.github.com/graphql": async () => answer() }).fetch, token: "secret", now: () => clock });
+    assert.deepEqual(await statusOf(app), { asked: null, answered: null, error: null }); // not yet
+    await graphOf(app);
+    assert.deepEqual(await statusOf(app), { asked: "2026-10-08T12:00:00Z", answered: "2026-10-08T12:00:00Z", error: null });
+    // The token expires. The numbers still come, the other way: only this says that they do.
+    answer = () => new Response("", { status: 401 });
+    clock += 3600e3;
+    await graphOf(app);
+    const graph = await graphOf(app); // the first sends what it had, and loads again
+    assert.equal(graph.live, true);
+    assert.deepEqual(await statusOf(app), { asked: "2026-10-08T13:00:00Z", answered: "2026-10-08T12:00:00Z", error: "https://api.github.com/graphql: 401" });
+    // And when it answers again, nothing is wrong.
+    answer = () => Response.json(answered());
+    clock += 3600e3;
+    await graphOf(app);
+    await graphOf(app);
+    assert.deepEqual(await statusOf(app), { asked: "2026-10-08T14:00:00Z", answered: "2026-10-08T14:00:00Z", error: null });
+    await app.close();
+  });
+
+  test("with a store, a refresh notes what became of asking GitHub with the token, for the requests that read it", async (t) => {
+    stub(t, console, "error", () => {});
+    const saved = new Map<string, unknown>();
+    const store = { get: async (key: string) => saved.get(key), put: async (key: string, value: unknown) => void saved.set(key, value) };
+    const statusOf = async () => {
+      const reader = await serve({ fetch: () => assert.fail("a request asked"), store, token: "secret" });
+      const { github } = JSON.parse((await reader.get("/status")).body) as { github: unknown };
+      await reader.close();
+      return github;
+    };
+    const refresh = async (answer: Response, at: string) => {
+      const app = await serve({
+        fetch: fakeNet({ "https://api.github.com/graphql": async () => answer }).fetch,
+        store,
+        refresh: true,
+        token: "secret",
+        now: () => Date.parse(at),
+      });
+      await graphOf(app);
+      await app.close();
+    };
+    assert.deepEqual(await statusOf(), { asked: null, answered: null, error: null });
+    await refresh(new Response("", { status: 401 }), "2026-10-08T11:45:00Z");
+    assert.deepEqual(await statusOf(), { asked: "2026-10-08T11:45:00Z", answered: null, error: "https://api.github.com/graphql: 401" }); // it never has
+    await refresh(Response.json(answered()), "2026-10-08T12:00:00Z");
+    assert.deepEqual(await statusOf(), { asked: "2026-10-08T12:00:00Z", answered: "2026-10-08T12:00:00Z", error: null });
+    await refresh(Response.json({ errors: [{ message: "Bad credentials" }] }), "2026-10-08T12:15:00Z");
+    assert.deepEqual(await statusOf(), { asked: "2026-10-08T12:15:00Z", answered: "2026-10-08T12:00:00Z", error: "GitHub: Bad credentials" });
+  });
+
   test("GitHub's one answer is for whatever asks within a minute, and is given three times as long as another request", async () => {
     let clock = 0;
     let asked = 0;
@@ -1412,8 +1480,8 @@ describe("the OpenAPI spec", () => {
     });
   }
 
-  test("describes what isn't a resource, too: the feed, the version, the motto, and WebFinger", () => {
-    for (const url of ["/talks.atom", "/version", "/.signature", "/.well-known/webfinger"]) assert.ok(paths[url]?.get, `${url} is in the spec`);
+  test("describes what isn't a resource, too: the feed, the version, the status, the motto, and WebFinger", () => {
+    for (const url of ["/talks.atom", "/version", "/status", "/.signature", "/.well-known/webfinger"]) assert.ok(paths[url]?.get, `${url} is in the spec`);
   });
 
   test("the validator catches what doesn't fit", () => {

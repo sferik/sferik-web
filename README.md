@@ -130,6 +130,10 @@ needs `GITHUB_TOKEN`, where the latest push is the latest commit of mine on the 
 the latest push. A request never waits on a slow API once the cache is warm. Stale values are served while a refresh runs in the background, and if RubyGems or
 GitHub is down, responses fall back to the snapshots in `data/`. `/contributions` and `/src` say which in `live`, and when the numbers are from in `asOf`. Numbers that couldn't be refreshed for two hours aren't live either: they're the last that were fetched, and a refresh that fails says so in the log.
 
+When GitHub's one request fails, the numbers still come, the other ways: so `/status` says what became of it, which nothing else would outside the log.
+`github.asked` is when GitHub was last asked with the token, `github.answered` when it last answered, and `github.error` what went wrong if it didn't (a
+token that has expired, say). Each is null without a token.
+
 ### Who's on, and write
 
 Everyone reading the site is logged in to the same computer, each browser tab a terminal of its own. A tab checks in (`POST /who`, with a random token
