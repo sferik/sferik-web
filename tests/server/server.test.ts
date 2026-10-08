@@ -298,6 +298,7 @@ describe("offline (snapshots from data/)", () => {
       assert.equal(res.headers.get("referrer-policy"), "strict-origin-when-cross-origin");
       assert.match(res.headers.get("permissions-policy")!, /camera=\(\), microphone=\(\)/);
       assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+      assert.equal(res.headers.get("cross-origin-opener-policy"), "same-origin");
     }
   });
 
@@ -306,7 +307,7 @@ describe("offline (snapshots from data/)", () => {
     const everything = lines.slice(lines.indexOf("/*") + 1);
     const rules = everything.slice(0, everything.indexOf("")).map((line) => line.trim().split(": "));
     const { headers } = await app.get("/whoami");
-    assert.equal(rules.length, 5);
+    assert.equal(rules.length, 6);
     for (const [name, value] of rules) assert.equal(headers.get(name), value, name);
     // And the same caching as the Node server gives each kind of file: one where
     // every file exists, since the scripts do only once they're built.

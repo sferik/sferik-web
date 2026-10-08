@@ -1121,6 +1121,8 @@ const SECURITY_HEADERS = {
   "referrer-policy": "strict-origin-when-cross-origin",
   "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=(), midi=(), interest-cohort=()",
   "x-content-type-options": "nosniff",
+  // A page another site opens, or one this site opens there, is no window to this one.
+  "cross-origin-opener-policy": "same-origin",
 };
 
 // The API is for any origin's pages. One of them may read a response's ETag

@@ -9,6 +9,7 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=(), midi=(), interest-cohort=()
   X-Content-Type-Options: nosniff
+  Cross-Origin-Opener-Policy: same-origin
 
 # Scripts and styles are checked on every load, like the pages, so a new
 # version never runs with an old one. (A deployed page asks for its own under
