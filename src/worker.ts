@@ -12,8 +12,9 @@
  *   the API       kept in the cache at each Cloudflare location, for as long
  *                 as each response says it's good for
  *   the scripts   a deploy's own, at /v/<commit>/, kept there too
- *   the pages     kept there too, for a minute, though browsers still check
- *                 for a new one on every load
+ *   the pages     kept there too, and sent at once while a new one is built
+ *                 for the next reader, though browsers still check for a new
+ *                 one on every load
  *   write         emailed, through Email Routing
  *
  * Deploy with `bun run deploy`; see the README for the one-time setup.
@@ -172,36 +173,61 @@ const LIVE_PATHS = ["/contributions", "/src"];
 //
 // A page tells browsers to check for a new one on every load (no-cache), and
 // building one is the most work the Worker does: every resource it shows, as
-// JSON and as text. So a page is kept as well, for a minute, under a
-// Cache-Control the cache will take. A deploy starts a new set of entries (the
-// commit is in each one's key), so a page from before it never loads scripts
-// from after.
+// JSON and as text. So a page is kept as well, under a Cache-Control the cache
+// will take. A deploy starts a new set of entries (the commit is in each one's
+// key), so a page from before it never loads scripts from after.
+//
+// A page is good for a minute, but kept for an hour: on a site this quiet,
+// most readers come more than a minute after the last one, and each would
+// wait for a page to be built. One that's older than a minute is sent as it
+// is, at once, and a new one is built for the next reader after that's gone.
+// So a page's numbers are from the last time it was asked for, within the hour.
+//
+// What wasn't found is kept for a minute too, since most of what asks for
+// what isn't here is a script trying every door (/wp-login.php), and so is
+// what's asked of HEAD, from what GET kept.
 //
 // What's kept has its own Cache-Control beside it, which is put back before
-// it's sent. For a page that's the no-cache the cache wouldn't take. For the
-// rest it's the one they were kept under, which the cache doesn't hand back
-// as it was: Cloudflare gives what it answers the zone's Browser Cache TTL
-// (four hours, unless it's set to respect the headers there are), so who's on,
-// good for five seconds, told whoever asked to keep it for four hours.
+// it's sent. For a page that's the no-cache the cache wouldn't take, and for
+// what wasn't found it's none. For the rest it's the one they were kept under,
+// which the cache doesn't hand back as it was: Cloudflare gives what it
+// answers the zone's Browser Cache TTL (four hours, unless it's set to respect
+// the headers there are), so who's on, good for five seconds, told whoever
+// asked to keep it for four hours.
 interface EdgeCache {
   match(request: Request): Promise<Response | undefined>;
   put(request: Request, response: Response): Promise<void>;
 }
-const PAGES_FOR = 60; // seconds
+const PAGES_FOR = 60; // seconds a page is good for
+const PAGES_KEPT = 3600; // seconds it's kept, to be sent while the next is built
+const MISSING_FOR = 60; // seconds
 const OWN = "x-own-cache-control";
+const NONE = "none"; // for a response with no Cache-Control of its own
+const KEPT_AT = "x-kept-at"; // when a page was kept, in milliseconds
 const isPage = (response: Response) => response.headers.get("cache-control") === "no-cache" && /^text\/html\b/.test(response.headers.get("content-type")!);
-function toKeep(response: Response): Response {
+const keepable = (response: Response) =>
+  response.status === 404 || (response.status === 200 && (isPage(response) || /^public, max-age=[1-9]/.test(response.headers.get("cache-control") ?? "")));
+function toKeep(response: Response, now: number): Response {
   const copy = new Response(response.body, response);
-  copy.headers.set(OWN, response.headers.get("cache-control")!);
-  if (isPage(response)) copy.headers.set("cache-control", `public, max-age=${PAGES_FOR}`);
+  copy.headers.set(OWN, response.headers.get("cache-control") ?? NONE);
+  if (response.status === 404) copy.headers.set("cache-control", `public, max-age=${MISSING_FOR}`);
+  else if (isPage(response)) {
+    copy.headers.set("cache-control", `public, max-age=${PAGES_KEPT}`);
+    copy.headers.set(KEPT_AT, String(now));
+  }
   return copy;
 }
-function toSend(kept: Response): Response {
-  const response = new Response(kept.body, kept);
-  response.headers.set("cache-control", kept.headers.get(OWN)!);
+function toSend(kept: Response, head: boolean): Response {
+  const response = new Response(head ? null : kept.body, kept);
+  const own = kept.headers.get(OWN)!;
+  if (own === NONE) response.headers.delete("cache-control");
+  else response.headers.set("cache-control", own);
   response.headers.delete(OWN);
+  response.headers.delete(KEPT_AT);
   return response;
 }
+// Whether what's kept is a page that's no longer good, to be built again.
+const old = (kept: Response, now: number) => now - Number(kept.headers.get(KEPT_AT) ?? Infinity) >= PAGES_FOR * 1000;
 // A query that changes nothing isn't another entry: /whoami?x=1 is /whoami,
 // and without this each one made up would be built anew. Only WebFinger reads
 // its query (the account asked about), and it's not at the top, like the
@@ -218,25 +244,34 @@ export default {
     // header and text to another, but the same to every one that wants the
     // same formats as much (asksFor), as each browser's does for a page. Asked
     // with If-None-Match, the cache answers 304 Not Modified itself.
-    const cache = request.method === "GET" ? edge() : undefined;
+    const cache = request.method === "GET" || request.method === "HEAD" ? edge() : undefined;
     const url = new URL(request.url);
     const key = `${url.origin}${url.pathname}?${new URLSearchParams({ search: TOP.test(url.pathname) ? "" : url.search, accept: asksFor(request.headers.get("accept") ?? undefined), commit: env.COMMIT ?? "" })}`;
     const tag = request.headers.get("if-none-match");
     const kept = await cache?.match(new Request(key, { headers: tag ? { "if-none-match": tag } : {} }));
-    if (kept) return toSend(kept);
-    const app = createApp({
-      files: files(env),
-      store: kvStore(env.LIVE),
-      token: env.GITHUB_TOKEN,
-      version: { commit: env.COMMIT, deployed: env.DEPLOYED },
-      host: env.MBP.get(env.MBP.idFromName("mbp")),
-      limit: allows(env.CHECK_INS),
-      mail: mailer(env),
-    });
-    const response = await serve(app, request);
-    if (cache && response.status === 200 && (isPage(response) || /^public, max-age=[1-9]/.test(response.headers.get("cache-control") ?? "")))
-      ctx.waitUntil(cache.put(new Request(key), toKeep(response.clone())));
-    return response;
+    // Answer a request with the app, and keep what a GET is told, if it's to be kept.
+    const answer = async (asked: Request) => {
+      const app = createApp({
+        files: files(env),
+        store: kvStore(env.LIVE),
+        token: env.GITHUB_TOKEN,
+        version: { commit: env.COMMIT, deployed: env.DEPLOYED },
+        host: env.MBP.get(env.MBP.idFromName("mbp")),
+        limit: allows(env.CHECK_INS),
+        mail: mailer(env),
+      });
+      const response = await serve(app, asked);
+      if (cache && asked.method === "GET" && keepable(response)) ctx.waitUntil(cache.put(new Request(key), toKeep(response.clone(), Date.now())));
+      return response;
+    };
+    if (!kept) return answer(request);
+    if (old(kept, Date.now())) {
+      // The page again, whole, whatever this request was: a HEAD, or one with If-None-Match.
+      const headers = new Headers(request.headers);
+      headers.delete("if-none-match");
+      ctx.waitUntil(answer(new Request(request.url, { headers })));
+    }
+    return toSend(kept, request.method === "HEAD");
   },
 
   // The cron trigger (wrangler.jsonc): fetch every live value and save them.

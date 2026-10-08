@@ -1,14 +1,15 @@
 {
   "name": "sferik-web",
   "private": true,
-  "description": "Erik Berlin's personal website and its API. No build step; `bun start` runs the server.",
+  "description": "Erik Berlin's personal website and its API. `bun start` builds the browser code and runs the server.",
   "scripts": {
     "start": "bun run build && node src/server.ts",
     "dev": "tsc -p tsconfig.client.json --watch --preserveWatchOutput & node --watch src/server.ts",
     "preview": "bun run build && wrangler dev",
     "deploy": "bun run build && wrangler deploy",
-    "build": "tsc -p tsconfig.client.json",
+    "build": "bun build src/client/*.ts --minify --sourcemap=linked --outdir public --external './*.js' --target browser",
     "og": "node scripts/og.ts",
+    "icons": "node scripts/icons.ts",
     "snapshot": "node scripts/snapshot.ts",
     "lighthouse": "bun run build && node scripts/lighthouse.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.client.json --noEmit",

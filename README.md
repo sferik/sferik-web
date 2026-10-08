@@ -37,7 +37,7 @@ Then open <http://localhost:3745>. (3745 spells "erik" on a phone keypad.)
 | `bun run dev`          | Rebuild the browser code and restart the server whenever a file changes                                                                                                                                                                                 |
 | `bun run preview`      | Build, then run the Cloudflare Worker locally on port 8787                                                                                                                                                                                              |
 | `bun run deploy`       | Build, then deploy to Cloudflare Workers (see Deploying)                                                                                                                                                                                                |
-| `bun run build`        | Compile `src/client/*.ts` to `public/*.js` (with source maps)                                                                                                                                                                                           |
+| `bun run build`        | Compile and minify `src/client/*.ts` to `public/*.js` (with source maps, which have the source as it was written)                                                                                                                                       |
 | `bun run typecheck`    | Type-check the server, the browser code, and the tests                                                                                                                                                                                                  |
 | `bun run lint`         | ESLint (with typescript-eslint) and a Prettier formatting check                                                                                                                                                                                         |
 | `bun run format`       | Format everything with Prettier and apply ESLint's automatic fixes                                                                                                                                                                                      |
@@ -183,8 +183,9 @@ The site runs on [Cloudflare Workers](https://workers.cloudflare.com), free at t
 with these differences: `data/*.json` is bundled into the Worker, `public/` is served from Workers static assets (scripts, styles, and images
 straight from them, without running the Worker, with the headers in `public/_headers`), and the live numbers live in KV,
 refreshed every 15 minutes by a cron trigger, so a request never waits on RubyGems or GitHub. What the API answers is kept in Cloudflare's cache
-for as long as each response says it's good for (a minute, for most), and so is each page, for a minute, though browsers still check for a new one
-on every load. A page asks for its scripts and style under the commit that's deployed (`/v/<commit>/site.js`), where they never change, so a browser
+for as long as each response says it's good for (a minute, for most), and so is each page, though browsers still check for a new one
+on every load: a page older than a minute is sent as it is, at once, and a new one is built for the next reader, so on a quiet day nobody waits
+for one. What isn't found is kept for a minute too. A page asks for its scripts and style under the commit that's deployed (`/v/<commit>/site.js`), where they never change, so a browser
 keeps them until the next deploy without checking. Until the first refresh, pages show the snapshots.
 Who's logged in lives in one Durable Object, `mbp`, so every tab sees the same list; and `write` sends email through Email Routing, which can only
 deliver to an address it has verified (the one in `wrangler.jsonc`).

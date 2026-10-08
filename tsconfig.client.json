@@ -1,5 +1,6 @@
 {
-  // The browser code: compiled to public/*.js as native ES modules, no bundler.
+  // The browser code, as native ES modules: type-checked with this, and compiled to public/*.js as it is by
+  // `bun run dev`. `bun run build` compiles it to the same files, minified, each still a module of its own.
   "compilerOptions": {
     "target": "es2023",
     "module": "es2022",

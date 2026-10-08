@@ -70,19 +70,29 @@ const good = (response: Response) => {
   return response;
 };
 
+// Where a page asks for its scripts and style: under the deployed commit
+// (/v/<commit>), or nowhere but their own names, with none.
+const SCRIPTS = /src="((?:\/v\/\w+)?)\/site\.js"/;
+
 sw.addEventListener("install", (e) => {
-  // A page's first requests come before this has taken over, so it asks again for all of them.
-  const requests = [
-    ...PAGES.map((url) => new Request(url, { headers: { accept: "text/html" } })),
-    ...DATA.map((url) => new Request(url, { headers: { accept: "application/json" } })),
-    ...FILES.map((url) => new Request(url)),
-  ];
-  e.waitUntil(
-    caches
-      .open(CACHE)
-      .then((cache) => Promise.all(requests.map(async (r) => cache.put(key(r), good(await fetch(r))))))
-      .then(() => sw.skipWaiting()),
-  );
+  // A page's first requests come before this has taken over, so it asks again
+  // for all of them: the scripts and style where the page did, which the
+  // browser has kept, and needn't download again.
+  const install = async () => {
+    const cache = await caches.open(CACHE);
+    const home = new Request("/", { headers: { accept: "text/html" } });
+    const page = good(await fetch(home));
+    const [, under] = SCRIPTS.exec(await page.clone().text())!;
+    await cache.put(key(home), page);
+    const requests = [
+      ...PAGES.slice(1).map((url) => new Request(url, { headers: { accept: "text/html" } })),
+      ...DATA.map((url) => new Request(url, { headers: { accept: "application/json" } })),
+      ...FILES.map((url) => new Request(url.replace(/^(?=\/[\w-]+\.(?:css|js)$)/, under))),
+    ];
+    await Promise.all(requests.map(async (r) => cache.put(key(r), good(await fetch(r)))));
+    await sw.skipWaiting();
+  };
+  e.waitUntil(install());
 });
 
 sw.addEventListener("activate", (e) =>

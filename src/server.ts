@@ -1191,6 +1191,8 @@ const TYPES: Record<string, string> = {
   ".map": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".ico": "image/x-icon",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
   ".webp": "image/webp",
   ".txt": "text/plain; charset=utf-8",
   ".flf": "text/plain; charset=utf-8",
@@ -1198,7 +1200,7 @@ const TYPES: Record<string, string> = {
 };
 // Files anyone may fetch from public/ (including source maps: view source, it's
 // meant to be read). Everything outside public/ stays private.
-const PUBLIC = /^\/(?:[\w-]+\.(?:html|css|js|js\.map|svg|png|txt)|\.plan|img\/[\w-]+\.(?:png|webp)|share\/[\w-]+\.flf)$/;
+const PUBLIC = /^\/(?:[\w-]+\.(?:html|css|js|js\.map|svg|png|ico|webmanifest|txt)|\.plan|img\/[\w-]+\.(?:png|webp)|share\/[\w-]+\.flf)$/;
 const PAGES: Record<string, string> = { "/": "index.html", "/talks": "talks.html", "/resume": "resume.html" };
 // A script or a style under the commit that's deployed: /v/<commit>/site.js.
 // A page asks for its own there (see versioned), and the scripts ask for each
@@ -1431,6 +1433,19 @@ export function createApp({
       if (!ACCOUNT.test(account)) return send(404, "text/plain; charset=utf-8", `No such account: ${account}\n`, cors);
       return send(200, "application/jrd+json; charset=utf-8", JSON.stringify(WEBFINGER, null, 2) + "\n", { ...cors, "cache-control": "public, max-age=3600" });
     }
+    // Where to report a security problem with the site (RFC 9116), which is to
+    // be read again before it's half a year old: so it's always that far off.
+    if (pathname === "/.well-known/security.txt") {
+      const profile = (await read("profile")) as Profile;
+      const expires = new Date(Math.floor(now() / 864e5) * 864e5 + 180 * 864e5);
+      const lines = [
+        `Contact: mailto:${profile.email}`,
+        `Expires: ${seconds(expires)}`,
+        `Canonical: ${profile.url}/.well-known/security.txt`,
+        "Preferred-Languages: en",
+      ];
+      return send(200, "text/plain; charset=utf-8", lines.join("\n") + "\n", { ...cors, "cache-control": "public, max-age=3600" });
+    }
     if (pathname === "/version") {
       const { commit = null, deployed = null } = version;
       const body = { commit, deployed, url: commit && `https://github.com/sferik/sferik-web/commit/${commit}` };
@@ -1515,7 +1530,7 @@ export function createApp({
               ? "public, max-age=31536000, immutable"
               : /\.(?:js|css)$/.test(name)
                 ? "no-cache"
-                : /\.(?:svg|png|webp|flf)$/.test(name)
+                : /\.(?:svg|png|ico|webp|flf)$/.test(name)
                   ? "public, max-age=86400, stale-while-revalidate=604800"
                   : "public, max-age=300",
         });

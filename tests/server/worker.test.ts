@@ -307,17 +307,54 @@ describe("the Worker", () => {
     assert.equal(on.headers.get("cache-control"), "public, max-age=5"); // and not for four hours
     assert.deepEqual(await on.json(), { users: [] });
     e.MBP.get = mbp;
-    // Not kept: what wasn't found, what doesn't say, what says to check every time (but for a
-    // page), and what a POST says.
+    // Not kept: what doesn't say, what says to check every time (but for a page), what's
+    // not acceptable, and what a POST says.
     for (const [url, accept] of [
       ["/version", "application/json"],
-      ["/nope", "application/json"],
       ["/.signature", "text/plain"], // which doesn't say how long it's good for
+      ["/whoami", "image/png"],
     ])
       await get(e, url, accept);
     await post(e, "/who?token=0123456789abcdef&page=/");
     await Promise.all(waiting);
     assert.equal(kept.size, 5);
+    // What HEAD asks is answered from what GET kept, without the body, and keeps nothing itself.
+    e.LIVE.get = () => Promise.reject(new Error("KV was read"));
+    const head = await get(e, "/whoami", "application/json", "HEAD");
+    assert.deepEqual(
+      [head.status, head.headers.get("cache-control"), head.headers.get("etag"), await head.text()],
+      [200, "public, max-age=60", again.headers.get("etag"), ""],
+    );
+    e.LIVE.get = async () => null;
+    assert.equal((await get(e, "/name", "application/json", "HEAD")).status, 200);
+    await Promise.all(waiting);
+    assert.equal(kept.size, 5);
+  });
+
+  test("keeps what wasn't found in Cloudflare's cache for a minute, and says nothing of that to whoever asked", async (t) => {
+    const kept = new Map<string, Response>();
+    const cache = {
+      match: async (request: Request) => kept.get(request.url)?.clone(),
+      put: async (request: Request, response: Response) => void kept.set(request.url, response),
+    };
+    const global = globalThis as { caches?: unknown };
+    const before = global.caches;
+    global.caches = { default: cache };
+    t.after(() => void (global.caches = before));
+
+    const e = env();
+    const first = await get(e, "/wp-login.php", "application/json");
+    assert.deepEqual([first.status, first.headers.get("cache-control")], [404, null]);
+    const body = await first.text();
+    await Promise.all(waiting);
+    assert.deepEqual(
+      [...kept.values()].map((response) => [response.status, response.headers.get("cache-control")]),
+      [[404, "public, max-age=60"]],
+    );
+    e.ASSETS.fetch = () => assert.fail("the assets were read");
+    const second = await get(e, "/wp-login.php", "application/json");
+    assert.deepEqual([second.status, second.headers.get("cache-control"), second.headers.get("x-own-cache-control")], [404, null, null]);
+    assert.equal(await second.text(), body);
   });
 
   test("keeps a deploy's scripts and style in Cloudflare's cache, at the commit's URLs, for good", async (t) => {
@@ -343,7 +380,7 @@ describe("the Worker", () => {
     assert.deepEqual([second.headers.get("cache-control"), await second.text()], ["public, max-age=31536000, immutable", css]);
   });
 
-  test("keeps a page in Cloudflare's cache for a minute, though it tells browsers to check every time, until the next deploy", async (t) => {
+  test("keeps a page in Cloudflare's cache, though it tells browsers to check every time, until the next deploy", async (t) => {
     const kept = new Map<string, Response>();
     const cache = {
       // Asked with If-None-Match, the cache answers 304 Not Modified, with the headers it kept.
@@ -366,7 +403,7 @@ describe("the Worker", () => {
     await Promise.all(waiting);
     assert.deepEqual(
       [...kept.values()].map((response) => response.headers.get("cache-control")),
-      ["public, max-age=60"],
+      ["public, max-age=3600"],
     );
     // The same again comes from the cache, without being built, and says what the first did.
     const assets = e.ASSETS.fetch;
@@ -374,6 +411,7 @@ describe("the Worker", () => {
     e.ASSETS.fetch = (request) => (built++, assets(request));
     const second = await get(e, "/", "text/html");
     assert.deepEqual([second.headers.get("cache-control"), second.headers.get("x-own-cache-control"), await second.text()], ["no-cache", null, page]);
+    assert.equal(second.headers.get("x-kept-at"), null);
     const unchanged = await worker.fetch(
       new Request("https://sferik.net/", { headers: { accept: "text/html", "if-none-match": first.headers.get("etag")! } }),
       e,
@@ -385,6 +423,59 @@ describe("the Worker", () => {
     e.COMMIT = "def5678";
     assert.equal(await (await get(e, "/", "text/html")).text(), page.replaceAll("/v/abc1234/", "/v/def5678/")); // with its own scripts
     assert.notEqual(built, 0);
+  });
+
+  test("sends a page that's older than a minute at once, and builds a new one for the next reader", async (t) => {
+    const kept = new Map<string, Response>();
+    const cache = {
+      match: async (request: Request) => {
+        const found = kept.get(request.url)?.clone();
+        return found && request.headers.has("if-none-match") ? new Response(null, { status: 304, headers: found.headers }) : found;
+      },
+      put: async (request: Request, response: Response) => void kept.set(request.url, response),
+    };
+    const global = globalThis as { caches?: unknown };
+    const before = global.caches;
+    global.caches = { default: cache };
+    t.after(() => void (global.caches = before));
+    let clock = Date.UTC(2026, 9, 7);
+    stub(t, Date, "now", () => clock);
+
+    const e = env();
+    const page = await (await get(e, "/", "text/html")).text();
+    await Promise.all(waiting);
+    // The live data changes, which a page shows: within the minute, the one kept is good, and nothing is built.
+    e.kv.set("live", JSON.stringify({ gems: { multi_json: 7, multi_xml: 0 } }));
+    const assets = e.ASSETS.fetch;
+    let built = 0;
+    e.ASSETS.fetch = (request) => (built++, assets(request));
+    clock += 59_999;
+    assert.equal(await (await get(e, "/", "text/html")).text(), page);
+    await Promise.all(waiting);
+    assert.equal(built, 0);
+    // After it, the reader still gets the one kept, and the next reader the one that's built meanwhile.
+    clock += 1;
+    const stale = await get(e, "/", "text/html");
+    assert.deepEqual([stale.headers.get("cache-control"), await stale.text()], ["no-cache", page]);
+    await Promise.all(waiting);
+    await Promise.all(waiting); // what was built is kept
+    assert.notEqual(built, 0);
+    const next = await (await get(e, "/", "text/html")).text();
+    assert.notEqual(next, page);
+    assert.match(next, /"multiDownloads":7\b/);
+    // Whatever asks for an old page has a whole new one built: a HEAD, or a request that has the old one.
+    for (const [method, headers] of [
+      ["HEAD", {}],
+      ["GET", { "if-none-match": stale.headers.get("etag")! }],
+    ] as const) {
+      clock += 60_000;
+      e.kv.set("live", JSON.stringify({ gems: { multi_json: clock, multi_xml: 0 } }));
+      const res = await worker.fetch(new Request("https://sferik.net/", { method, headers: { accept: "text/html", ...headers } }), e, CTX);
+      assert.equal(await res.text(), "");
+      await Promise.all(waiting);
+      await Promise.all(waiting);
+      assert.ok((await (await get(e, "/", "text/html")).text()).includes(`"multiDownloads":${clock}`), method);
+    }
   });
 
   test("takes write's Idempotency-Key, so a message sent again isn't emailed twice, unless it didn't go through", async (t) => {

@@ -27,6 +27,8 @@
   Cache-Control: public, max-age=86400, stale-while-revalidate=604800
 /*.png
   Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/*.ico
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
 /img/*
   Cache-Control: public, max-age=86400, stale-while-revalidate=604800
 

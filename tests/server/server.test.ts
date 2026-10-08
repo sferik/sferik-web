@@ -317,6 +317,7 @@ describe("offline (snapshots from data/)", () => {
       ["/*.js.map", "/site.js.map"],
       ["/*.svg", "/icons.svg"],
       ["/*.png", "/og.png"],
+      ["/*.ico", "/favicon.ico"],
       ["/img/*", "/img/dependency.webp"],
       ["/share/*", "/share/standard.flf"],
     ]) {
@@ -334,7 +335,7 @@ describe("offline (snapshots from data/)", () => {
     const expected = [
       // What the browser code compiles to, whether or not it has been.
       ...files("src/client", /\.ts$/).flatMap((name) => [`/${name.replace(/\.ts$/, ".js")}`, `/${name.replace(/\.ts$/, ".js.map")}`]),
-      ...files("public", /\.(css|svg|png)$/).map((name) => `/${name}`),
+      ...files("public", /\.(css|svg|png|ico)$/).map((name) => `/${name}`),
       ...files("public/img", /^[^.]/).map((name) => `/img/${name}`),
       ...files("public/share", /^[^.]/).map((name) => `/share/${name}`),
     ].sort();
@@ -686,6 +687,42 @@ describe("offline (snapshots from data/)", () => {
     const post = await app.get("/resume", { method: "POST" });
     assert.equal(post.status, 405);
     assert.equal(post.headers.get("allow"), "GET, HEAD, OPTIONS");
+  });
+});
+
+describe("what browsers and scanners ask for by name", () => {
+  test("the icons that have to be pictures, and the manifest that lists them, which each page links", async () => {
+    const app = await serve({ offline: true });
+    const ico = await app.get("/favicon.ico");
+    assert.deepEqual([ico.status, ico.type, ico.headers.get("cache-control")], [200, "image/x-icon", "public, max-age=86400, stale-while-revalidate=604800"]);
+    assert.deepEqual([...ico.bytes.subarray(0, 6)], [0, 0, 1, 0, 1, 0]); // an icon, with one picture
+    assert.equal(ico.bytes.subarray(23, 26).toString(), "PNG"); // which is a PNG, where the header says
+    assert.equal(ico.bytes.readUInt32LE(14), ico.bytes.length - 22);
+    const manifest = await app.get("/manifest.webmanifest");
+    assert.deepEqual([manifest.status, manifest.type], [200, "application/manifest+json; charset=utf-8"]);
+    const { icons, start_url: start } = JSON.parse(manifest.body) as { icons: { src: string; type: string }[]; start_url: string };
+    assert.equal(start, "/");
+    for (const icon of [...icons, { src: "/apple-touch-icon.png", type: "image/png" }]) {
+      const res = await app.get(icon.src);
+      assert.deepEqual([res.status, res.type], [200, icon.type], icon.src);
+    }
+    for (const url of ["/", "/talks", "/resume", "/nope"]) {
+      const page = (await app.get(url, { accept: HTML })).body;
+      assert.ok(page.includes('<link rel="apple-touch-icon" href="/apple-touch-icon.png" />'), url);
+      assert.ok(page.includes('<link rel="manifest" href="/manifest.webmanifest" />'), url);
+    }
+    await app.close();
+  });
+
+  test("/.well-known/security.txt says where to report a problem, and to read it again within half a year", async () => {
+    const app = await serve({ offline: true, now: () => Date.UTC(2026, 9, 7, 23, 30) });
+    const res = await app.get("/.well-known/security.txt");
+    assert.deepEqual([res.status, res.type, res.headers.get("access-control-allow-origin")], [200, "text/plain; charset=utf-8", "*"]);
+    assert.equal(
+      res.body,
+      "Contact: mailto:sferik@gmail.com\nExpires: 2027-04-05T00:00:00Z\nCanonical: https://sferik.net/.well-known/security.txt\nPreferred-Languages: en\n",
+    );
+    await app.close();
   });
 });
 
