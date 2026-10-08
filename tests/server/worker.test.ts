@@ -486,7 +486,7 @@ describe("the Worker", () => {
     await Promise.all(waiting);
     assert.deepEqual(
       [...kept.values()].map((response) => response.headers.get("cache-control")),
-      ["public, max-age=3600"],
+      ["public, max-age=3660"],
     );
     // The same again comes from the cache, without being built, and says what the first did.
     const assets = e.ASSETS.fetch;
@@ -494,7 +494,7 @@ describe("the Worker", () => {
     e.ASSETS.fetch = (request) => (built++, assets(request));
     const second = await get(e, "/", "text/html");
     assert.deepEqual([second.headers.get("cache-control"), second.headers.get("x-own-cache-control"), await second.text()], ["no-cache", null, page]);
-    assert.equal(second.headers.get("x-kept-at"), null);
+    assert.deepEqual([second.headers.get("x-kept-at"), second.headers.get("x-good-for")], [null, null]);
     const unchanged = await worker.fetch(
       new Request("https://sferik.net/", { headers: { accept: "text/html", "if-none-match": first.headers.get("etag")! } }),
       e,
@@ -580,6 +580,85 @@ describe("the Worker", () => {
       await Promise.all(waiting);
       assert.ok((await (await get(e, "/", "text/html")).text()).includes(`"multiDownloads":${clock}`), method);
     }
+  });
+
+  test("sends what the API says at once when it's older than it's good for, and builds it again for the next to ask", async (t) => {
+    const kept = new Map<string, Response>();
+    const cache = {
+      match: async (request: Request) => {
+        const found = kept.get(request.url)?.clone();
+        return found && request.headers.has("if-none-match") ? new Response(null, { status: 304, headers: found.headers }) : found;
+      },
+      put: async (request: Request, response: Response) => void kept.set(request.url, response),
+    };
+    const global = globalThis as { caches?: unknown };
+    const before = global.caches;
+    global.caches = { default: cache };
+    t.after(() => void (global.caches = before));
+    let clock = Date.UTC(2026, 9, 7);
+    stub(t, Date, "now", () => clock);
+
+    const e = env();
+    const first = await get(e, "/whoami", "application/json");
+    const body = await first.text();
+    await Promise.all(waiting);
+    // It's kept for an hour past the five minutes it's good for.
+    assert.deepEqual(
+      [...kept.values()].map((response) => response.headers.get("cache-control")),
+      ["public, max-age=3900"],
+    );
+    // The live data changes. Within the five minutes, what's kept is good, and KV isn't read.
+    e.kv.set("live", JSON.stringify({ gems: { multi_json: 7, multi_xml: 0 } }));
+    const live = e.LIVE.get;
+    let read = 0;
+    e.LIVE.get = (key, type) => (read++, live(key, type));
+    clock += 299_999;
+    assert.equal(await (await get(e, "/whoami", "application/json")).text(), body);
+    await Promise.all(waiting);
+    assert.equal(read, 0);
+    // After them, whoever asks still gets what's kept, as it was, and the next gets what's built meanwhile.
+    clock += 1;
+    const stale = await get(e, "/whoami", "application/json");
+    assert.deepEqual(
+      [stale.headers.get("cache-control"), stale.headers.get("x-kept-at"), stale.headers.get("x-good-for"), await stale.text()],
+      ["public, max-age=300", null, null, body],
+    );
+    await Promise.all(waiting);
+    await Promise.all(waiting); // what was built is kept
+    assert.equal(read, 1);
+    const next = (await (await get(e, "/whoami", "application/json")).json()) as { multiDownloads: number };
+    assert.equal(next.multiDownloads, 7);
+    assert.equal(read, 1);
+    // So does one who asks whether it has changed: it's told it hasn't, and it's built again whole.
+    clock += 300_000;
+    e.kv.set("live", JSON.stringify({ gems: { multi_json: 8, multi_xml: 0 } }));
+    const unchanged = await worker.fetch(
+      new Request("https://sferik.net/whoami", { headers: { accept: "application/json", "if-none-match": stale.headers.get("etag")! } }),
+      e,
+      CTX,
+    );
+    assert.deepEqual([unchanged.status, unchanged.headers.get("cache-control")], [304, "public, max-age=300"]);
+    await Promise.all(waiting);
+    await Promise.all(waiting);
+    assert.equal(((await (await get(e, "/whoami", "application/json")).json()) as { multiDownloads: number }).multiDownloads, 8);
+    // What changes only with a deploy is kept an hour past its own hour.
+    await get(e, "/talks", "application/json");
+    await Promise.all(waiting);
+    assert.equal([...kept.values()].at(-1)!.headers.get("cache-control"), "public, max-age=7200");
+    // Who's on is good for a few seconds, and kept no longer: the cache drops it then, and nothing here builds it again.
+    await post(e, "/who?token=0123456789abcdef&page=/");
+    const on = await get(e, "/who", "application/json");
+    assert.deepEqual(((await on.json()) as { users: unknown[] }).users.length, 1);
+    await Promise.all(waiting);
+    const who = [...kept.values()].at(-1)!;
+    assert.deepEqual([who.headers.get("cache-control"), who.headers.get("x-kept-at"), who.headers.get("x-good-for")], ["public, max-age=5", null, null]);
+    clock += 3_600_000;
+    const mbp = e.MBP.get;
+    e.MBP.get = () => assert.fail("the Durable Object was asked");
+    await get(e, "/who", "application/json");
+    await Promise.all(waiting);
+    await Promise.all(waiting);
+    e.MBP.get = mbp;
   });
 
   test("takes write's Idempotency-Key, so a message sent again isn't emailed twice, unless it didn't go through", async (t) => {

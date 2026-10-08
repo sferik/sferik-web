@@ -10,7 +10,8 @@
  *   who's on      a Durable Object, mbp, so every tab sees the same list
  *   rations       rate limits by address, on check-ins and write's messages
  *   the API       kept in the cache at each Cloudflare location, for as long
- *                 as each response says it's good for
+ *                 as each response says it's good for, and for an hour more,
+ *                 to be sent at once while it's built again for the next
  *   the scripts   a deploy's own, at /v/<commit>/, kept there too
  *   the pages     kept there too, and sent at once while a new one is built
  *                 for the next reader, though browsers still check for a new
@@ -179,13 +180,21 @@ const LIVE_PATHS = ["/contributions", "/src"];
 // will take. A deploy starts a new set of entries (the commit is in each one's
 // key), so a page from before it never loads scripts from after.
 //
-// A page is good for a minute, but kept for an hour: on a site this quiet,
-// most readers come more than a minute after the last one, and each would
-// wait for a page to be built. One that's older than a minute is sent as it
-// is, at once, and a new one is built for the next reader after that's gone.
+// A page is good for a minute, but kept for an hour more: on a site this
+// quiet, most readers come more than a minute after the last one, and each
+// would wait for a page to be built. One that's older than a minute is sent as
+// it is, at once, and a new one is built for the next reader after that's gone.
 // So a page's numbers are from the last time it was asked for, within the hour.
 // While one is being built, that's kept too, for half a minute, so the readers
 // who come before it's done don't each have one built as well.
+//
+// What the API says is kept the same way, for an hour past what it says it's
+// good for, since most who ask for it come after that as well. Sent when it's
+// no longer good, it says how old it is (Age, which the cache counts), and
+// that's more than it's good for: so whoever keeps what they're told asks
+// again the next time, and gets the one that was built meanwhile. Only what's
+// good for less than a minute isn't kept past it: who's on, which would be a
+// list of who was.
 //
 // What wasn't found is kept for a minute too, since most of what asks for
 // what isn't here is a script trying every door (/wp-login.php), and so is
@@ -203,12 +212,14 @@ interface EdgeCache {
   put(request: Request, response: Response): Promise<void>;
 }
 const PAGES_FOR = 60; // seconds a page is good for
-const PAGES_KEPT = 3600; // seconds it's kept, to be sent while the next is built
+const KEPT_PAST = 3600; // seconds a response is kept after that, to be sent while the next is built
+const SOON = 60; // seconds: what's good for less is never sent once it isn't
 const BUILDING_FOR = 30; // seconds that a page being built is left to it, before another is
 const MISSING_FOR = 60; // seconds
 const OWN = "x-own-cache-control";
 const NONE = "none"; // for a response with no Cache-Control of its own
-const KEPT_AT = "x-kept-at"; // when a page was kept, in milliseconds
+const KEPT_AT = "x-kept-at"; // when a response was kept, in milliseconds, if it's to be sent past what it's good for
+const GOOD_FOR = "x-good-for"; // and the seconds it's good for
 const isPage = (response: Response) => response.headers.get("cache-control") === "no-cache" && /^text\/html\b/.test(response.headers.get("content-type")!);
 const keepable = (response: Response) =>
   response.status === 404 || (response.status === 200 && (isPage(response) || /^public, max-age=[1-9]/.test(String(response.headers.get("cache-control")))));
@@ -216,9 +227,14 @@ function toKeep(response: Response, now: number): Response {
   const copy = new Response(response.body, response);
   copy.headers.set(OWN, response.headers.get("cache-control") ?? NONE);
   if (response.status === 404) copy.headers.set("cache-control", `public, max-age=${MISSING_FOR}`);
-  else if (isPage(response)) {
-    copy.headers.set("cache-control", `public, max-age=${PAGES_KEPT}`);
-    copy.headers.set(KEPT_AT, String(now));
+  else {
+    // A page's minute, or else the seconds the response says, which whatever else is kept does (keepable).
+    const good = isPage(response) ? PAGES_FOR : Number(/max-age=(\d+)/.exec(response.headers.get("cache-control")!)![1]);
+    if (good >= SOON) {
+      copy.headers.set("cache-control", `public, max-age=${good + KEPT_PAST}`);
+      copy.headers.set(KEPT_AT, String(now));
+      copy.headers.set(GOOD_FOR, String(good));
+    }
   }
   return copy;
 }
@@ -229,11 +245,13 @@ function toSend(kept: Response, head: boolean): Response {
   else response.headers.set("cache-control", own);
   response.headers.delete(OWN);
   response.headers.delete(KEPT_AT);
+  response.headers.delete(GOOD_FOR);
   return response;
 }
-// Whether what's kept is a page that's no longer good, to be built again.
-const old = (kept: Response, now: number) => now - Number(kept.headers.get(KEPT_AT) ?? Infinity) >= PAGES_FOR * 1000;
-// What's kept to say a page is being built, and whether that still holds.
+// Whether what's kept is no longer good, to be built again. (What's never sent past what it's good for says
+// neither when it was kept nor for how long, and isn't.)
+const old = (kept: Response, now: number) => now - Number(kept.headers.get(KEPT_AT) ?? Infinity) >= Number(kept.headers.get(GOOD_FOR)) * 1000;
+// What's kept to say a response is being built, and whether that still holds.
 const building = (now: number) => new Response("building", { headers: { "cache-control": `public, max-age=${BUILDING_FOR}`, [KEPT_AT]: String(now) } });
 const begun = (marker: Response | undefined, now: number) => marker !== undefined && now - Number(marker.headers.get(KEPT_AT)) < BUILDING_FOR * 1000;
 // A query that changes nothing isn't another entry: /whoami?x=1 is /whoami,
@@ -301,7 +319,7 @@ async function respond(request: Request, env: Env, ctx: Context): Promise<Respon
   const now = Date.now();
   const marker = new Request(`${key}&building=1`);
   if (old(kept, now) && !begun(await cache!.match(marker), now)) {
-    // The page again, whole, whatever this request was: a HEAD, or one with If-None-Match.
+    // The response again, whole, whatever this request was: a HEAD, or one with If-None-Match.
     const headers = new Headers(request.headers);
     headers.delete("if-none-match");
     ctx.waitUntil(cache!.put(marker, building(now)));
