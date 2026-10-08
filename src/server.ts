@@ -1213,9 +1213,11 @@ const SECURITY_HEADERS = {
 };
 
 // The API is for any origin's pages. One of them may read a response's ETag
-// (to ask again with it, in If-None-Match) and how long it's told to wait
-// (Retry-After), which a browser otherwise keeps from a page on another origin.
-const CORS = { "access-control-allow-origin": "*", "access-control-expose-headers": "ETag, Retry-After" };
+// (to ask again with it, in If-None-Match), how long it's told to wait
+// (Retry-After), and how long a response has been kept on its way already
+// (Age, which Cloudflare's cache says, and which is that much off how long
+// it's good for), which a browser otherwise keeps from a page on another origin.
+const CORS = { "access-control-allow-origin": "*", "access-control-expose-headers": "ETag, Retry-After, Age" };
 
 // An entity tag for a response: FNV-1a over its bytes, and its length. Fast,
 // the same on Node and Workers, and plenty to tell versions of a file apart.
