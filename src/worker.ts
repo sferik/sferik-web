@@ -196,6 +196,12 @@ const LIVE_PATHS = ["/contributions", "/src"];
 // good for less than a minute isn't kept past it: who's on, which would be a
 // list of who was.
 //
+// Asking again at once doesn't get the one that was built meanwhile, as often
+// as not: it isn't built yet. So a request that says not to be answered from
+// a cache (Cache-Control: no-cache) isn't answered with what's no longer
+// good: it's built now, and waits for that. What's still good is its answer
+// all the same, so saying so builds nothing that wasn't due to be built.
+//
 // What wasn't found is kept for a minute too, since most of what asks for
 // what isn't here is a script trying every door (/wp-login.php), and so is
 // what's asked of HEAD, from what GET kept.
@@ -260,6 +266,8 @@ const begun = (marker: Response | undefined, now: number) => marker !== undefine
 // resources are, so only a path that is has its query left out.
 const TOP = /^\/[\w.-]*$/;
 const edge = () => (globalThis as { caches?: { default?: EdgeCache } }).caches?.default;
+// Whether a request says not to be answered from a cache.
+const insists = (request: Request) => /\bno-cache\b/i.test(request.headers.get("cache-control") ?? "");
 export interface Context {
   waitUntil(promise: Promise<unknown>): void;
 }
@@ -317,15 +325,21 @@ async function respond(request: Request, env: Env, ctx: Context): Promise<Respon
   };
   if (!kept) return answer(request);
   const now = Date.now();
+  if (!old(kept, now)) return toSend(kept, request.method === "HEAD");
+  // A whole GET keeps what it's told, so one that insists is all the building there is to do.
+  const whole = request.method === "GET" && !tag;
+  if (insists(request) && whole) return answer(request);
   const marker = new Request(`${key}&building=1`);
-  if (old(kept, now) && !begun(await cache!.match(marker), now)) {
+  if (!begun(await cache!.match(marker), now)) {
     // The response again, whole, whatever this request was: a HEAD, or one with If-None-Match.
     const headers = new Headers(request.headers);
     headers.delete("if-none-match");
     ctx.waitUntil(cache!.put(marker, building(now)));
     ctx.waitUntil(answer(new Request(request.url, { headers })));
   }
-  return toSend(kept, request.method === "HEAD");
+  // One that insists, and isn't whole, is answered by the app as well: it says whether what the request has is
+  // still so (304), or sends no body (HEAD), of what's so now.
+  return insists(request) ? answer(request) : toSend(kept, request.method === "HEAD");
 }
 
 export default {

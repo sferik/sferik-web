@@ -1413,7 +1413,7 @@ export function createApp({
       return send(204, "text/plain", "", {
         ...cors,
         "access-control-allow-methods": "GET, HEAD, OPTIONS",
-        "access-control-allow-headers": "accept, if-none-match",
+        "access-control-allow-headers": "accept, cache-control, if-none-match",
         // For a day, or as much of one as a browser allows: without this, it asks again every five seconds.
         "access-control-max-age": "86400",
       });

@@ -643,6 +643,43 @@ describe("the Worker", () => {
     await Promise.all(waiting);
     await Promise.all(waiting);
     assert.equal(((await (await get(e, "/whoami", "application/json")).json()) as { multiDownloads: number }).multiDownloads, 8);
+    // One that says not to be answered from a cache isn't answered with what's no longer good: it's built
+    // now, and kept. While what's kept is good, that's its answer all the same, and nothing is built.
+    const fresh = (headers: Record<string, string> = {}, method = "GET") =>
+      worker.fetch(
+        new Request("https://sferik.net/whoami", { method, headers: { accept: "application/json", "cache-control": "no-cache", ...headers } }),
+        e,
+        CTX,
+      );
+    const downloads = async (response: Response) => ((await response.json()) as { multiDownloads: number }).multiDownloads;
+    assert.equal(await downloads(await fresh()), 8);
+    e.kv.set("live", JSON.stringify({ gems: { multi_json: 9, multi_xml: 0 } }));
+    assert.equal(await downloads(await fresh()), 8);
+    clock += 300_000;
+    read = 0;
+    const now = await fresh({ "Cache-Control": "max-age=0, No-Cache" });
+    assert.deepEqual([now.headers.get("cache-control"), await downloads(now), read], ["public, max-age=300", 9, 1]);
+    await Promise.all(waiting);
+    assert.equal(await downloads(await get(e, "/whoami", "application/json")), 9);
+    assert.equal(read, 1);
+    // One that asks whether what it has is still so is told of what's so now, and so is a HEAD, while it's built
+    // again whole for the next to ask.
+    for (const [headers, method, status] of [
+      [{ "if-none-match": now.headers.get("etag")! }, "GET", 304],
+      [{ "if-none-match": '"another"' }, "GET", 200],
+      [{}, "HEAD", 200],
+    ] as const) {
+      clock += 300_000;
+      read = 0;
+      const told = await fresh(headers, method);
+      assert.deepEqual(
+        [told.status, method === "HEAD" || status === 304 ? await told.text() : await downloads(told)],
+        [status, status === 200 && method === "GET" ? 9 : ""],
+      );
+      await Promise.all(waiting);
+      await Promise.all(waiting);
+      assert.equal(read, 2, `${method} ${status}`); // once for it, and once for the next
+    }
     // What changes only with a deploy is kept an hour past its own hour.
     await get(e, "/talks", "application/json");
     await Promise.all(waiting);

@@ -185,7 +185,7 @@ straight from them, without running the Worker, with the headers in `public/_hea
 refreshed every 15 minutes by a cron trigger, so a request never waits on RubyGems or GitHub. What the API answers is kept in Cloudflare's cache
 for as long as each response says it's good for (five minutes for what has live numbers, an hour for what changes only with a deploy), and so is each page, though browsers still check for a new one
 on every load: a page older than a minute is sent as it is, at once, and a new one is built for the next reader, so on a quiet day nobody waits
-for one. What the API answers is sent the same way once it's older than it's good for, for an hour past that, but for who's on, which is never sent old. What isn't found is kept for a minute too. A page asks for its scripts and style under the commit that's deployed (`/v/<commit>/site.js`), where they never change, so a browser
+for one. What the API answers is sent the same way once it's older than it's good for, for an hour past that, but for who's on, which is never sent old. A request that says not to be answered from a cache (`Cache-Control: no-cache`) isn't sent what's old: that's built for it, and it waits. What isn't found is kept for a minute too. A page asks for its scripts and style under the commit that's deployed (`/v/<commit>/site.js`), where they never change, so a browser
 keeps them until the next deploy without checking. Until the first refresh, pages show the snapshots.
 Who's logged in lives in one Durable Object, `mbp`, so every tab sees the same list; and `write` sends email through Email Routing, which can only
 deliver to an address it has verified (the one in `wrangler.jsonc`).
