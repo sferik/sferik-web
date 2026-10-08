@@ -161,6 +161,17 @@ describe("negotiate", () => {
     assert.equal(negotiate("application/json;q=high, text/plain;q=0.5"), "json");
   });
 
+  test("the most exact thing said of a format is what counts, whatever a wider one says", () => {
+    assert.equal(negotiate("text/*;q=0.5, text/html;q=0"), "text");
+    assert.equal(negotiate("text/html;q=0, */*"), "text");
+    assert.equal(negotiate("*/*, text/plain;q=0"), null); // only text is */*'s, of the three
+    assert.equal(negotiate("application/*, application/json;q=0, text/plain;q=0.1"), "text");
+    assert.equal(negotiate("text/*;q=0.2, */*;q=0.9, application/json;q=0.5"), "json"); // text is text/*'s, not */*'s
+    // Either of a format's own types will do: the one that's wanted more.
+    assert.equal(negotiate("text/html;q=0, application/xhtml+xml"), "html");
+    assert.notEqual(asksFor("text/*, text/html;q=0"), asksFor("text/*"));
+  });
+
   test("stripTags removes markup and decodes entities", () => {
     assert.equal(stripTags('<a href="x">R&amp;D &lt;3 &quot;q&quot; &#39;s&#39;</a> &gt;'), `R&D <3 "q" 's' >`);
   });

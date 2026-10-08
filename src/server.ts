@@ -1276,6 +1276,10 @@ const CONTENT_TYPE: Record<Format, string> = {
   vcard: "text/vcard; charset=utf-8",
 };
 // How much an Accept header wants each format: 0 for not at all, up to 1.
+// The most exact thing it says of a format is what counts, as it does for
+// whoever wrote it: text/html;q=0 turns the page down though text/* is taken,
+// and */* is for whatever nothing else there speaks of.
+const exactness = (type: string) => (type === "*/*" ? 0 : type.endsWith("/*") ? 1 : 2);
 function wanted(accept: string | undefined): (format: Format) => number {
   const prefs = (accept || "*/*").split(",").map((part) => {
     const [type, ...params] = part.trim().toLowerCase().split(";");
@@ -1284,7 +1288,11 @@ function wanted(accept: string | undefined): (format: Format) => number {
     // A q that's no number (q=high) says nothing, so it's as if it weren't there.
     return { type: type.trim(), q: Number.isNaN(weight) ? 1 : weight };
   });
-  return (format) => Math.max(0, ...prefs.filter((p) => MEDIA[format].includes(p.type)).map((p) => p.q));
+  return (format) => {
+    const said = prefs.filter((p) => MEDIA[format].includes(p.type));
+    const most = Math.max(...said.map((p) => exactness(p.type)));
+    return Math.max(0, ...said.filter((p) => exactness(p.type) === most).map((p) => p.q));
+  };
 }
 export function negotiate(accept: string | undefined, formats: Format[] = ["html", "json", "text"]): Format | null {
   const q = wanted(accept);
