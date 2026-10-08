@@ -1499,8 +1499,22 @@ function validate(spec: Schema, schema: Schema, value: unknown, at = "$"): strin
 
 describe("the OpenAPI spec", () => {
   const spec = JSON.parse(fs.readFileSync(path.join(ROOT, "public", "openapi.json"), "utf8")) as Schema;
-  type Operation = { parameters?: { name: string; in: string; example: string }[]; responses: { "200": { content: Record<string, { schema: Schema }> } } };
+  type Parameter = { name: string; in: string; example: string };
+  type Header = { required?: boolean; schema: Schema };
+  type Operation = {
+    parameters?: (Parameter | { $ref: string })[];
+    responses: { "200": { headers: Record<string, Header | { $ref: string }>; content: Record<string, { schema: Schema }> }; "304"?: { $ref: string } };
+  };
   const paths = spec.paths as Record<string, { get?: Operation }>;
+  // What a reference points to in the spec, or what's there, if it isn't one.
+  const resolved = <T extends object>(node: T | { $ref: string }): T =>
+    "$ref" in node
+      ? (node.$ref
+          .slice(2)
+          .split("/")
+          .reduce((at, key) => (at as Record<string, unknown>)[key], spec as unknown) as T)
+      : node;
+  const parametersOf = (operation: Operation) => (operation.parameters ?? []).map((p) => resolved<Parameter>(p));
 
   test("is served at /openapi.json, to any origin", async () => {
     const app = await serve({ offline: true });
@@ -1531,7 +1545,11 @@ describe("the OpenAPI spec", () => {
       for (const [url, item] of Object.entries(paths)) {
         if (!item.get) continue; // /write only takes POST; the tests below cover it
         // With the example of each parameter it takes: WebFinger's account.
-        const query = new URLSearchParams((item.get.parameters ?? []).map((p) => [p.name, p.example])).toString();
+        const query = new URLSearchParams(
+          parametersOf(item.get)
+            .filter((p) => p.in === "query")
+            .map((p) => [p.name, p.example]),
+        ).toString();
         for (const [type, { schema }] of Object.entries(item.get.responses["200"].content)) {
           const res = await app.get(query ? `${url}?${query}` : url, { accept: type });
           assert.equal(res.status, 200, `${url} as ${type}`);
@@ -1541,6 +1559,50 @@ describe("the OpenAPI spec", () => {
       }
     });
   }
+
+  // What a client that keeps what it's told goes by: which version a response is, how long it's good for, and
+  // that asking after the version it has is answered without the body.
+  test("every GET says which version it is and how long it's good for, as the spec says, and is a 304 when asked after by its ETag", async (t) => {
+    const app = await serve({ offline: true });
+    t.after(() => app.close());
+    const unchanged = resolved<{ headers: Record<string, Header | { $ref: string }> }>({ $ref: "#/components/responses/NotModified" });
+    for (const [url, item] of Object.entries(paths)) {
+      if (!item.get) continue;
+      const parameters = parametersOf(item.get);
+      assert.deepEqual(
+        parameters.filter((p) => p.in === "header").map((p) => p.name),
+        ["If-None-Match", "Cache-Control"],
+        `${url} takes them`,
+      );
+      assert.equal(item.get.responses["304"]?.$ref, "#/components/responses/NotModified", `${url} may not have changed`);
+      const query = new URLSearchParams(parameters.filter((p) => p.in === "query").map((p) => [p.name, p.example])).toString();
+      const { headers, content } = item.get.responses["200"];
+      const cacheControl = resolved<Header>(headers["Cache-Control"]).schema as { const?: string; enum?: string[] };
+      for (const type of Object.keys(content)) {
+        const ask = (more: Record<string, string> = {}) => app.get(query ? `${url}?${query}` : url, { accept: type, headers: more });
+        const res = await ask();
+        // Each header the spec says is always there is, and is what it says.
+        for (const [name, header] of Object.entries(headers)) {
+          const { required, schema } = resolved<Header>(header);
+          const value = res.headers.get(name);
+          if (required) assert.ok(value, `${url} as ${type} has ${name}`);
+          if (value !== null) assert.deepEqual(validate(spec, schema, schema.type === "integer" ? Number(value) : value), [], `${url} as ${type}: ${name}`);
+        }
+        assert.match(res.headers.get("etag")!, /^"[0-9a-f]+-[0-9a-f]+"$/);
+        // A page is to be asked after each time, and the rest is good for as long as the spec says.
+        const good = type === "text/html" ? "no-cache" : (cacheControl.const ?? cacheControl.enum![0]);
+        assert.equal(res.headers.get("cache-control"), good, `${url} as ${type}`);
+        // Asked after by its ETag (which a proxy may have weakened), it hasn't changed.
+        for (const tag of [res.headers.get("etag")!, `W/${res.headers.get("etag")!}`]) {
+          const again = await ask({ "if-none-match": tag });
+          assert.deepEqual([again.status, again.body], [304, ""], `${url} as ${type}, asked after`);
+          for (const [name, header] of Object.entries(unchanged.headers))
+            if (resolved<Header>(header).required) assert.equal(again.headers.get(name), res.headers.get(name), `${url} as ${type}: a 304's ${name}`);
+        }
+        assert.equal((await ask({ "if-none-match": '"another"' })).status, 200);
+      }
+    }
+  });
 
   test("describes what isn't a resource, too: the feed, the version, the status, the motto, and WebFinger", () => {
     for (const url of ["/talks.atom", "/version", "/status", "/.signature", "/.well-known/webfinger"]) assert.ok(paths[url]?.get, `${url} is in the spec`);

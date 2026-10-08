@@ -95,7 +95,9 @@ Each resource is one URL. The `Accept` header picks the representation, or add `
 
 The whole API is described in OpenAPI 3.1 at [`/openapi.json`](https://sferik.net/openapi.json) (`public/openapi.json`), so you can load it into
 Swagger UI, Postman, or a client generator. The server tests fetch every path in every format the spec lists and check each JSON response against its
-schema, so the spec can't drift from the API.
+schema, so the spec can't drift from the API. It describes what a client that keeps what it's told goes by, too: each `GET`'s `ETag` and how long it's
+good for (`Cache-Control`), the 304 that asking after it with `If-None-Match` gets, how long Cloudflare's cache has kept it (`Age`), and the
+`Cache-Control: no-cache` that says not to be answered with what that cache has kept too long. The tests ask every path for those as well.
 
 Anything else gets `406 Not Acceptable`, listing the formats that resource has. Responses send `Vary: Accept`, and everything but the pages allows cross-origin requests. Each of those says where the API's description is, in a `Link` header (`rel="service-desc"`), as the pages do in their HTML. An error is plain text, or JSON for a client that prefers it, with a `code` to tell it from the others by (`not_found`, `bad_path`, `method_not_allowed`, …).
 
