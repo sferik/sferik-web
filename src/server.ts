@@ -1217,7 +1217,16 @@ const SECURITY_HEADERS = {
 // (Retry-After), and how long a response has been kept on its way already
 // (Age, which Cloudflare's cache says, and which is that much off how long
 // it's good for), which a browser otherwise keeps from a page on another origin.
-const CORS = { "access-control-allow-origin": "*", "access-control-expose-headers": "ETag, Retry-After, Age" };
+//
+// And each of the API's responses says where its description is (Link, with
+// the relation RFC 8631 has for that), as the pages do in their HTML: a client
+// that has only a response can find out what else there is to ask for. A
+// page on another origin may read that too.
+const CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-expose-headers": "ETag, Retry-After, Age, Link",
+  link: '</openapi.json>; rel="service-desc"; type="application/openapi+json"',
+};
 
 // An entity tag for a response: FNV-1a over its bytes, and its length. Fast,
 // the same on Node and Workers, and plenty to tell versions of a file apart.

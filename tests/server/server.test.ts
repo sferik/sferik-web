@@ -301,6 +301,26 @@ describe("offline (snapshots from data/)", () => {
     assert.equal(await good("/", "text/plain"), "public, max-age=300");
   });
 
+  test("what the API answers says where its description is, and a page doesn't, which says so in its HTML", async () => {
+    const DESCRIPTION = '</openapi.json>; rel="service-desc"; type="application/openapi+json"';
+    for (const [url, accept] of [
+      ["/whoami", JSON_],
+      ["/resume", "text/plain"],
+      ["/resume", "application/pdf"],
+      ["/talks.atom", "*/*"],
+      ["/version", JSON_],
+      ["/openapi.json", "*/*"],
+      ["/.well-known/webfinger?resource=acct:sferik@sferik.net", "*/*"],
+      ["/nope", JSON_], // an error too
+      ["/whoami", "image/png"],
+    ])
+      assert.equal((await app.get(url, { accept })).headers.get("link"), DESCRIPTION, `${url} as ${accept}`);
+    const page = await app.get("/resume", { accept: HTML });
+    assert.equal(page.headers.get("link"), null);
+    assert.match(page.body, /<link rel="service-desc" href="\/openapi\.json" type="application\/openapi\+json" \/>/);
+    assert.equal((await app.get("/site.css")).headers.get("link"), null);
+  });
+
   test("406 when nothing acceptable", async () => {
     const res = await app.get("/resume", { accept: "image/png" });
     assert.equal(res.status, 406);
@@ -724,8 +744,9 @@ describe("offline (snapshots from data/)", () => {
     assert.equal(options.headers.get("access-control-allow-headers"), "accept, cache-control, if-none-match");
     // And the browser needn't ask again for a day.
     assert.equal(options.headers.get("access-control-max-age"), "86400");
-    // A page on another origin may read the ETag, how long to wait, and how long a response has been kept already.
-    assert.equal(head.headers.get("access-control-expose-headers"), "ETag, Retry-After, Age");
+    // A page on another origin may read the ETag, how long to wait, how long a response has been kept already,
+    // and where the API's description is.
+    assert.equal(head.headers.get("access-control-expose-headers"), "ETag, Retry-After, Age, Link");
     const post = await app.get("/resume", { method: "POST" });
     assert.equal(post.status, 405);
     assert.equal(post.headers.get("allow"), "GET, HEAD, OPTIONS");
