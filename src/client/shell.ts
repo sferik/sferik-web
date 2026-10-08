@@ -227,7 +227,8 @@ async function info(node: FSNode, signal: AbortSignal): Promise<{ size: number; 
   return { size: 64 + 32 * kids.length, modified: new Date(Math.max(...kids.map((k) => k.modified.getTime()))) };
 }
 
-// Expand a glob like *.txt or talks/* against the tree.
+// Expand a glob like *.txt or talks/* against the tree. Only * is a wildcard:
+// a ? stands for itself, as in fish.
 function glob(pattern: string): string[] {
   const slash = pattern.lastIndexOf("/");
   const dirPart = slash >= 0 ? pattern.slice(0, slash) : "";
@@ -236,7 +237,7 @@ function glob(pattern: string): string[] {
     "^" +
       pattern
         .slice(slash + 1)
-        .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+        .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
         .replace(/\*/g, ".*") +
       "$",
   );
@@ -1311,7 +1312,14 @@ const COMMANDS: Record<string, Command> = table<Command>({
 
   tree: async (args) => {
     const { opts, rest } = getopts("tree", args, "adF", "LI");
-    const skip = opts.I ? new RegExp(`^(?:${opts.I.replace(/[.+^${}()[\]\\]/g, "\\$&").replace(/\*/g, ".*")})$`) : null;
+    // tree's patterns: * is any run of characters, ? any one, and | sets one pattern off from the next.
+    const skip = opts.I
+      ? new RegExp(
+          `^(?:${opts.I.replace(/[.+^${}()[\]\\]/g, "\\$&")
+            .replace(/\*/g, ".*")
+            .replace(/\?/g, ".")})$`,
+        )
+      : null;
     const root = rest[0] ?? ".";
     let node;
     try {

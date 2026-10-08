@@ -95,6 +95,9 @@ test.describe("shell language", () => {
     expect(await result(page, "echo *.nope")).toContain("fish: No matches for wildcard '*.nope'");
     await expect(page.locator(".repl-line .prompt")).toContainText("[124]");
     expect(await result(page, "echo nope/*")).toContain("No matches for wildcard");
+    // Only * is a wildcard: a ? stands for itself, as in fish, and matches nothing here.
+    expect(await result(page, "ls ?*")).toBe("fish: No matches for wildcard '?*'. See `help wildcards-globbing`.");
+    expect(await result(page, "echo *.tx?")).toContain("No matches for wildcard '*.tx?'");
   });
 
   test("syntax errors", async ({ page }) => {
@@ -1698,6 +1701,8 @@ test.describe("less common paths", () => {
     expect(await result(page, "ls -lh dependency.webp")).toMatch(/\d\.\dK .* dependency\.webp$/);
     expect(await result(page, "tree -I talks | tail -1")).toBe("1 directory, 5 files");
     expect(await result(page, "tree -I '*.txt' | tail -1")).toBe("2 directories, 4 files");
+    expect(await result(page, "tree -I 'talk?' | tail -1")).toBe("1 directory, 5 files"); // ? is any one character
+    expect(await result(page, "tree -I '?' | tail -1")).toBe("2 directories, 6 files");
   });
 
   test("banner at its default width", async ({ page }) => {
