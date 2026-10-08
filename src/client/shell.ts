@@ -66,6 +66,10 @@ const block = (...parts: (Node | string)[]) => {
   el.append(...parts);
   return el;
 };
+// A table to look up what's typed in: only what's in it, and not what every
+// object has besides (constructor, toString), which aren't commands, files,
+// or variables.
+const table = <T>(entries: Record<string, T>): Record<string, T> => Object.assign(Object.create(null) as Record<string, T>, entries);
 const pad = (s: string | number, n: number) => String(s).padStart(n);
 const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const LOGIN = new Date(); // this session started when the page loaded
@@ -127,7 +131,7 @@ function getopts(name: string, args: string[], flags: string, valued = "", long:
     }
     if (a.startsWith("--") && a.length > 2) {
       const [key, value] = a.slice(2).split("=");
-      if (!(key in long)) throw new UsageError(`${name}: unrecognized option '--${key}'`);
+      if (!Object.hasOwn(long, key)) throw new UsageError(`${name}: unrecognized option '--${key}'`);
       const [opt, takes] = long[key];
       opts[opt] = takes ? (value ?? args[++i]) : true;
       continue;
@@ -158,16 +162,16 @@ class UsageError extends Error {}
 const HTML = "HTML document text, Unicode text, UTF-8 text";
 const FS: Dir = {
   url: "/",
-  children: {
+  children: table<FSNode>({
     ".plan": { url: "/.plan", type: "ASCII text" },
     ".signature": { url: "/.signature", type: "ASCII text" },
     "dependency.webp": { url: "/img/dependency.webp", type: "RIFF (little-endian) data, Web/P image" },
     "humans.txt": { url: "/humans.txt", type: "ASCII text" },
     "index.html": { url: "/", type: HTML },
-    resume: { url: "/resume", children: { "index.html": { url: "/resume", type: HTML } } },
+    resume: { url: "/resume", children: table<FSNode>({ "index.html": { url: "/resume", type: HTML } }) },
     "robots.txt": { url: "/robots.txt", type: "ASCII text" },
-    talks: { url: "/talks", children: { "index.html": { url: "/talks", type: HTML } } },
-  },
+    talks: { url: "/talks", children: table<FSNode>({ "index.html": { url: "/talks", type: HTML } }) },
+  }),
 };
 const isDir = (node: FSNode): node is Dir => "children" in node;
 class Denied extends Error {}
@@ -343,8 +347,8 @@ const LOG = [RENAME, INITIAL];
 const message = (sha: string) => OBJECTS[sha].body.split("\n\n").slice(1).join("\n\n").replace(/\n$/, "").split("\n");
 
 function findObject(ref = "HEAD"): string | undefined {
-  const at = { HEAD: RENAME, "HEAD^": INITIAL, "HEAD~1": INITIAL, main: RENAME };
-  if (ref in at) return at[ref as keyof typeof at];
+  const at = table({ HEAD: RENAME, "HEAD^": INITIAL, "HEAD~1": INITIAL, main: RENAME });
+  if (ref in at) return at[ref];
   if (ref.endsWith("^{tree}")) {
     const sha = findObject(ref.slice(0, -7));
     return sha && OBJECTS[sha].body.slice(5, 45);
@@ -417,14 +421,15 @@ const exported = new Map(
   }),
 );
 const local = new Map<string, string>();
-const readOnly = (): Record<string, string> => ({
-  status: String(lastStatus[lastStatus.length - 1]),
-  pipestatus: lastStatus.join(" "),
-  version: "4.1.2",
-  hostname: "mbp",
-  PWD: "/Users/sferik",
-});
-const vars = (): Record<string, string> => ({ ...Object.fromEntries(local), ...Object.fromEntries(exported), ...readOnly() });
+const readOnly = (): Record<string, string> =>
+  table({
+    status: String(lastStatus[lastStatus.length - 1]),
+    pipestatus: lastStatus.join(" "),
+    version: "4.1.2",
+    hostname: "mbp",
+    PWD: "/Users/sferik",
+  });
+const vars = (): Record<string, string> => table({ ...Object.fromEntries(local), ...Object.fromEntries(exported), ...readOnly() });
 const listVars = (v: Record<string, string>, line: (name: string, value: string) => string) =>
   Object.keys(v)
     .sort()
@@ -740,7 +745,7 @@ function flagsOf(usage: string): string[] {
 }
 
 // What each command does, for help and man: [usage, description].
-const HELP: Record<string, [string, string]> = {
+const HELP: Record<string, [string, string]> = table({
   "?": ["?", "List the keyboard shortcuts."],
   banner: ["banner [-w width] [text]", "Print text as a banner, sideways, like the old Unix banner."],
   caffeinate: ["caffeinate [-dimsu] [-t seconds] [command]", "Keep the screen awake, until Ctrl-C (or the command finishes)."],
@@ -818,9 +823,9 @@ const HELP: Record<string, [string, string]> = {
   write: ["write sferik", "Email me what you type, when you press Ctrl-D."],
   whoami: ["whoami", "Say who this is."],
   yes: ["yes [string]", "Print y (or the string) over and over, until Ctrl-C."],
-};
+});
 
-const COMMANDS: Record<string, Command> = {
+const COMMANDS: Record<string, Command> = table<Command>({
   // Only the main commands. The fun ones are for finding.
   help: (args) => {
     const { opts, rest } = getopts("help", args, "a");
@@ -1216,7 +1221,7 @@ const COMMANDS: Record<string, Command> = {
       return fail("mentions: couldn't reach webmention.io");
     }
     if (!feed.children.length) return "No webmentions yet.";
-    const what: Record<string, string> = { "like-of": "liked", "repost-of": "reposted", "in-reply-to": "replied to", "bookmark-of": "bookmarked" };
+    const what = table({ "like-of": "liked", "repost-of": "reposted", "in-reply-to": "replied to", "bookmark-of": "bookmarked" });
     return feed.children
       .map((m) => `${(m.published ?? m["wm-received"]).slice(0, 10)}  ${m.author?.name || "someone"} ${what[m["wm-property"]] ?? "mentioned"} it: ${m.url}`)
       .join("\n");
@@ -2022,7 +2027,7 @@ const COMMANDS: Record<string, Command> = {
     else root.dataset.theme = "phosphor";
     return "Wrong movie. Close enough.";
   },
-};
+});
 COMMANDS.logout = COMMANDS.exit;
 
 class GhError extends Error {}
@@ -2251,7 +2256,7 @@ function jqStep(step: JqStep, x: unknown): unknown[] {
   }
   if (kind === "null") return [null];
   if ("key" in step) {
-    if (kind === "object") return [(x as Record<string, unknown>)[step.key] ?? null];
+    if (kind === "object") return [Object.hasOwn(x as object, step.key) ? (x as Record<string, unknown>)[step.key] : null];
     throw new Error(`Cannot index ${kind} with "${step.key}"`);
   }
   if (kind === "array") return [(x as unknown[]).at(step.index) ?? null];

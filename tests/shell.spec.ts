@@ -327,6 +327,28 @@ test.describe("for loops and functions", () => {
     expect(await result(page, "fingr")).toBe("fish: Unknown command: fingr. Did you mean finger?");
     expect(await result(page, "xyzzyq")).toBe("fish: Unknown command: xyzzyq");
   });
+
+  test("what every object has (constructor, toString) is no command, file, variable, option, or page of help", async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    for (const name of ["constructor", "toString", "hasOwnProperty", "__proto__"]) {
+      expect(await result(page, name), name).toMatch(new RegExp(`^fish: Unknown command: ${name}`));
+      expect(await result(page, `help ${name}`), name).toBe(`help: no help for ${name}. help -a lists every command.`);
+      expect(await result(page, `man ${name}`), name).toBe(`No manual entry for ${name}`);
+      expect(await result(page, `echo [$${name}]`), name).toBe("[]");
+      expect(await result(page, `set -q ${name}; echo $status`), name).toBe("1");
+      expect(await result(page, `cat ${name}`), name).toBe(`cat: ${name}: No such file or directory`);
+      expect(await result(page, `cd ${name}`), name).toBe(`cd: The directory '${name}' does not exist`);
+      expect(await result(page, `git show ${name}`), name).toContain(`fatal: ambiguous argument '${name}'`);
+      expect(await result(page, `grep --${name} x humans.txt`), name).toBe(`grep: unrecognized option '--${name}'`);
+      expect(await result(page, `echo '{"a":1}' | jq .${name}`), name).toBe("null");
+    }
+    // Nor is one colored as a command, or completed like one.
+    await field(page).fill("constructor -");
+    await field(page).press("Tab");
+    await expect(page.locator(".echo span").first()).toHaveClass("hl-err");
+    expect(errors).toEqual([]);
+  });
 });
 
 test.describe("line editing", () => {
