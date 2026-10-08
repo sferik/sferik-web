@@ -216,14 +216,18 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh }: Liv
     if (offline) return Promise.resolve(undefined);
     if (store) {
       if (!refresh) return store.get(key) as Promise<T | undefined>;
-      // A failed load keeps what the store already has.
+      // A failed load keeps what the store already has, and says so: nothing
+      // else would, since requests go on reading the value that's there.
       return load().then(
         async (value) => {
           await store.put(key, value);
           await store.put(`at:${key}`, now());
           return value;
         },
-        () => store.get(key) as Promise<T | undefined>,
+        (err: unknown) => {
+          console.error(`couldn't refresh ${key}:`, err);
+          return store.get(key) as Promise<T | undefined>;
+        },
       );
     }
     let entry = cache.get(key);
@@ -249,11 +253,26 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh }: Liv
   }
 
   const HOUR = 3600e3;
+  // With a token, GitHub is asked first, and something else if that fails:
+  // which gets the numbers, so nothing would say that the token no longer works.
+  const failing =
+    <T>(otherwise: () => Promise<T>) =>
+    (err: unknown) => {
+      console.error("GitHub, with the token:", err);
+      return otherwise();
+    };
+  const loaded = async (key: "gems" | "contributions") => (store ? ((await store.get(`at:${key}`)) as number | undefined) : cache.get(key)?.loaded);
   return {
     // When a value was last loaded, if it has been: what it's in says so (asOf).
     async at(key: "gems" | "contributions"): Promise<string | undefined> {
-      const at = store ? ((await store.get(`at:${key}`)) as number | undefined) : cache.get(key)?.loaded;
+      const at = await loaded(key);
       return at === undefined ? undefined : seconds(new Date(at));
+    },
+    // Whether a value is live: loaded, and within the last two hours. Each is
+    // loaded again within one, so one that's older has failed to be, more than
+    // once, and is the last that was known, not what's so now.
+    async fresh(key: "gems" | "contributions"): Promise<boolean> {
+      return now() - ((await loaded(key)) ?? -Infinity) < 2 * HOUR;
     },
     // Every gem @sferik owns: name → downloads.
     gems: () =>
@@ -261,8 +280,8 @@ function createLive({ fetch, offline, now, timeout, token, store, refresh }: Liv
         const list = await getJSON<{ name: string; downloads: number }[]>("https://rubygems.org/api/v1/owners/sferik/gems.json");
         return Object.fromEntries(list.map((g) => [g.name, g.downloads])) as Record<string, number>;
       }),
-    stars: (repos: string[]) => cached("stars", 6 * HOUR, () => (token ? starred(repos).catch(() => counted(repos)) : counted(repos))),
-    contributions: () => cached("contributions", HOUR, () => (token ? calendar().catch(scraped) : scraped())),
+    stars: (repos: string[]) => cached("stars", 6 * HOUR, () => (token ? starred(repos).catch(failing(() => counted(repos))) : counted(repos))),
+    contributions: () => cached("contributions", HOUR, () => (token ? calendar().catch(failing(scraped)) : scraped())),
     lastPush: () =>
       cached("push", 5 * 60e3, async (): Promise<Push> => {
         type Event = { type: string; repo: { name: string }; payload?: { head?: string }; created_at: string };
@@ -333,7 +352,8 @@ function createModules({ live, read }: { live: Live; read: Read }) {
         stars: projects.reduce((t, p) => t + (p.stars ?? 0), 0),
       },
       more: data.more,
-      live: Boolean(gems),
+      // Whether the downloads are: not the snapshot, nor what was last fetched hours ago.
+      live: await live.fresh("gems"),
       // When the downloads were fetched, or the day of the snapshot.
       asOf: (await live.at("gems")) ?? `${data.snapshot}T00:00:00Z`,
     };
@@ -365,7 +385,8 @@ function createModules({ live, read }: { live: Live; read: Read }) {
         contributions,
         since: 2008,
         lastPush: push ?? null,
-        live: Boolean(days),
+        // Whether the graph is: not the snapshot, nor what was last fetched hours ago.
+        live: await live.fresh("contributions"),
         // When the graph was fetched, or the last day of the snapshot.
         asOf: (await live.at("contributions")) ?? `${snapshot.at(-1)!.date}T00:00:00Z`,
       };

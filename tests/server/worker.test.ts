@@ -164,6 +164,7 @@ describe("the Worker", () => {
   });
 
   test("a refresh keeps the old value of what it couldn't load, and drops what nothing asks for any more", async (t) => {
+    const errors = stub(t, console, "error", () => {});
     const e = env();
     // What an earlier version kept: a star count for each repository, and downloads that are still wanted.
     e.kv.set(
@@ -178,6 +179,7 @@ describe("the Worker", () => {
     assert.deepEqual(Object.keys(saved).sort(), ["at:contributions", "at:gems", "at:push", "at:stars", "contributions", "gems", "push", "stars"]);
     assert.deepEqual([saved.gems, saved["at:gems"]], [{ multi_json: 5, multi_xml: 0 }, 1000]);
     assert.equal((await json(e, "/whoami")).multiDownloads, 5);
+    assert.equal(errors.calls, 1); // it says what it couldn't load, for the log
   });
 
   test("keeps who's logged in in the Durable Object, which every request shares", async () => {

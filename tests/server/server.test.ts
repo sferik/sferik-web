@@ -815,7 +815,8 @@ describe("a deploy's scripts and style", () => {
 // ------------------------------------------------------------ live data
 
 describe("live data", () => {
-  test("uses RubyGems and GitHub, with a token when given", async () => {
+  test("uses RubyGems and GitHub, with a token when given", async (t) => {
+    stub(t, console, "error", () => {}); // GitHub's own answers aren't stood in for here, so it's asked the other way
     const net = fakeNet();
     const app = await serve({ fetch: net.fetch, token: "secret" });
     const src = JSON.parse((await app.get("/src", { accept: JSON_ })).body);
@@ -843,7 +844,10 @@ describe("live data", () => {
     await app.close();
   });
 
-  test("with a token, the contributions come from GitHub itself, and from elsewhere only if that fails", async () => {
+  test("with a token, the contributions come from GitHub itself, and from elsewhere only if that fails", async (t) => {
+    // A failure with the token is said, since the numbers still come, from elsewhere.
+    const said: unknown[][] = [];
+    stub(t, console, "error", (...args: unknown[]) => void said.push(args));
     const calendar = {
       weeks: [{ contributionDays: [{ date: "2026-10-04", contributionCount: 2 }] }, { contributionDays: [{ date: "2026-10-05", contributionCount: 5 }] }],
     };
@@ -872,6 +876,10 @@ describe("live data", () => {
       );
       await app.close();
     }
+    assert.deepEqual(
+      said.map(([what, err]) => [what, String(err)]),
+      ["rate limited", "no data", "rate limited"].map((why) => ["GitHub, with the token:", `Error: GitHub: ${why}`]),
+    );
     // Shaded like any other: GitHub's days come without levels.
     const net = fakeNet({ "https://api.github.com/graphql": async () => Response.json(answers[0]) });
     const app = await serve({ fetch: net.fetch, token: "secret" });
@@ -892,7 +900,8 @@ describe("live data", () => {
     await open.close();
   });
 
-  test("with a token, every repository's stars come in one request; without, in one each, keeping those that answer", async () => {
+  test("with a token, every repository's stars come in one request; without, in one each, keeping those that answer", async (t) => {
+    stub(t, console, "error", () => {});
     type Project = { name: string; stars: number | null };
     const src = async (app: App) => (JSON.parse((await app.get("/src", { accept: JSON_ })).body) as { projects: Project[] }).projects;
     const stars = (projects: Project[], name: string) => projects.find((p) => p.name === name)!.stars;
@@ -958,7 +967,9 @@ describe("live data", () => {
     await app.close();
   });
 
-  test("with a store, requests only read it, and a refresh loads and saves, keeping the old value when a load fails", async () => {
+  test("with a store, requests only read it, and a refresh loads and saves, keeping the old value when a load fails", async (t) => {
+    const said: unknown[][] = [];
+    stub(t, console, "error", (...args: unknown[]) => void said.push(args));
     const saved = new Map<string, unknown>([["gems", { multi_json: 1, multi_xml: 0 }]]);
     const store = { get: async (key: string) => saved.get(key), put: async (key: string, value: unknown) => void saved.set(key, value) };
     const net = fakeNet({
@@ -977,16 +988,29 @@ describe("live data", () => {
     await refresher.get("/whoami", { accept: JSON_ });
     assert.deepEqual(saved.get("gems"), { multi_json: 2, multi_xml: 0 });
     await refresher.close();
-    // It notes when, which is what the numbers are as of: to the second.
-    const later = await serve({ fetch: net.fetch, store });
-    assert.equal(JSON.parse((await later.get("/src", { accept: JSON_ })).body).asOf, "2026-10-06T20:00:00Z");
+    // It notes when, which is what the numbers are as of: to the second. They're live for two hours after.
+    let clock = Date.parse("2026-10-06T22:00:00.499Z");
+    const later = await serve({ fetch: net.fetch, store, now: () => clock });
+    const src = async () => {
+      const { asOf, live } = JSON.parse((await later.get("/src", { accept: JSON_ })).body) as { asOf: string; live: boolean };
+      return [asOf, live];
+    };
+    assert.deepEqual(await src(), ["2026-10-06T20:00:00Z", true]);
+    clock += 1; // every refresh since has failed: they're what was last known
+    assert.deepEqual(await src(), ["2026-10-06T20:00:00Z", false]);
     await later.close();
+    assert.equal(said.length, 0); // and nothing has failed yet
 
     const failing = await serve({ fetch: fakeNet({ "https://rubygems.org/api/v1/owners/sferik/gems.json": 503 }).fetch, store, refresh: true });
     assert.equal(JSON.parse((await failing.get("/whoami", { accept: JSON_ })).body).multiDownloads, 2);
     assert.deepEqual(saved.get("gems"), { multi_json: 2, multi_xml: 0 });
     assert.equal(JSON.parse((await failing.get("/src", { accept: JSON_ })).body).asOf, "2026-10-06T20:00:00Z"); // still when it last loaded
     await failing.close();
+    // And it says what it couldn't load, which nothing else would.
+    assert.deepEqual(
+      said.filter(([what]) => what === "couldn't refresh gems:").map(([, err]) => String(err)),
+      Array<string>(2).fill("Error: https://rubygems.org/api/v1/owners/sferik/gems.json: 503"),
+    );
   });
 
   test("projects are sorted by downloads, with related ones listed together", async () => {
@@ -1138,6 +1162,13 @@ describe("live data", () => {
     await new Promise((r) => setTimeout(r, 20));
     assert.equal(await total(), 2); // the failed refresh kept the old value
     assert.equal(await asOf(), "1970-01-01T01:00:00Z"); // which is as old as it was
+    // And still live, an hour old; two hours old, it's what was last known.
+    const live = async () => JSON.parse((await app.get("/src", { accept: JSON_ })).body).live;
+    assert.equal(await live(), true);
+    clock += 3600e3 - 1;
+    assert.equal(await live(), true);
+    clock += 1;
+    assert.equal(await live(), false);
     await app.close();
   });
 });
