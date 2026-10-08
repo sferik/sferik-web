@@ -623,6 +623,10 @@ test.describe("offline", () => {
     await expect(page.locator("h1")).toContainText("ls -lt ~/talks");
     await page.goto("/resume");
     await expect(page.locator("main")).toContainText("General Commands Manual");
+    // What the site is installed with is there too, though no page here had asked for it.
+    const there = (url: string) => page.evaluate(async (path) => (await fetch(path)).ok, url);
+    for (const url of ["/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png", "/favicon.ico"])
+      expect(await there(url), url).toBe(true);
     // A page it never fetched isn't there.
     await expect(page.goto("/nope-never-visited")).rejects.toThrow();
   });

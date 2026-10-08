@@ -22,7 +22,8 @@ interface SwScope {
 const sw = self as unknown as SwScope;
 
 const CACHE = "sferik-2"; // a new name leaves the last one behind, which activating deletes
-// The pages' files, and the shell's (cat .plan works offline too).
+// The pages' files, the shell's (cat .plan works offline too), and what the
+// site is installed with: its manifest, and the icons that names.
 const FILES = [
   "/site.css",
   "/site.js",
@@ -34,6 +35,11 @@ const FILES = [
   "/share/standard.flf",
   "/icons.svg",
   "/favicon.svg",
+  "/favicon.ico",
+  "/apple-touch-icon.png",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/manifest.webmanifest",
   "/img/dependency.webp",
   "/img/dependency-2x.webp",
   "/.plan",
