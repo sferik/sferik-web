@@ -141,7 +141,7 @@ for the host.
 `write sferik` sends what you type (or pipe in) to `POST /write`, which emails it, with a Reply-To when the message includes an email address. One
 message a minute from any one address, twenty a day in all, and 5,000 bytes each: one past that gets a 429, with the seconds to wait as its
 `Retry-After`. A message sent with an `Idempotency-Key` header (random, one per message) can be sent again if no answer came: the same key within a
-day is the same message, answered as sent and not emailed twice (or, asked after while it's still being sent, answered 409, with the seconds to wait). Both `POST`s are for the site's own pages and for tools like curl: one from another site's page gets a 403. Both answer in plain text, or in JSON for a client that prefers it, where
+day is the same message, answered as sent and not emailed twice (or, asked after while it's still being sent, answered 409, with the seconds to wait). The shell's `write` sends one with each message, and sends a message that got no answer once more, three seconds later. Both `POST`s are for the site's own pages and for tools like curl: one from another site's page gets a 403. Both answer in plain text, or in JSON for a client that prefers it, where
 an error has a `code` (`busy`, `full`, `too_long`, …) to tell it from the others by. The Node server prints messages instead of emailing them.
 
 ## Configuration

@@ -1717,18 +1717,31 @@ const COMMANDS: Record<string, Command> = table<Command>({
     ].join("\n");
   },
 
-  // write sferik: what you type (or pipe in) arrives in my email.
+  // write sferik: what you type (or pipe in) arrives in my email. A message
+  // goes with a key of its own (Idempotency-Key), and the server emails one
+  // once, however often it's sent with the same key. So a message that got no
+  // answer, which may have arrived all the same, is sent once more after a
+  // pause, and can't arrive twice. If that gets no answer either, there's no
+  // telling whether it arrived: only offline is it sure that nothing was sent.
   write: async function* (args, io) {
     if (!args.length) return fail("usage: write user [tty]");
     if (args[0] !== "sferik") return fail(`write: ${args[0]} is not logged in`);
     if (!io.stdin && io.isatty) yield "Type your message, then Ctrl-D to send it, or Ctrl-C to cancel. Include your email address if you'd like a reply.\n";
     const text = await readAll(io.stdin ?? io.tty());
     if (!text.trim()) return fail("write: nothing to send");
+    if (!navigator.onLine) return fail("write: you're offline, so nothing was sent");
+    const url = `/write?tty=${(await online()).you}`;
+    const key = crypto.randomUUID();
+    const send = () => fetch(url, { method: "POST", body: text, headers: { "idempotency-key": key } });
     let res: Response;
     try {
-      res = await fetch(`/write?tty=${(await online()).you}`, { method: "POST", body: text });
-    } catch {
-      return fail("write: sferik.net can't be reached, so nothing was sent");
+      res = await send().catch(async () => {
+        await sleep(WRITE_AGAIN, io.signal);
+        return send();
+      });
+    } catch (err) {
+      if (err instanceof Interrupt) throw err;
+      return fail("write: sferik.net didn't answer, so the message may not have been sent");
     }
     const said = (await res.text()).trimEnd();
     if (!res.ok) return fail(said);
@@ -2193,6 +2206,8 @@ async function online(): Promise<Who> {
   } catch {}
   return { you: "ttys000", users: [{ tty: "ttys000", page: "/", login: LOGIN.toISOString(), idle: 0 }] };
 }
+// How long write waits before it sends a message again that got no answer.
+const WRITE_AGAIN = 3000;
 // What w says someone's doing: the command their page shows.
 const DOING: Record<string, string> = { "/": "-fish", "/talks": "ls -lt ~/talks", "/resume": "man sferik" };
 // The computer's been up since the first commit to the name's repository.

@@ -1048,15 +1048,51 @@ test.describe("write and imgcat", () => {
     expect(sent!.url).toMatch(/\/write\?tty=ttys\d{3}$/);
   });
 
+  test("write sends a message with a key, and once more with the same key if no answer comes", async ({ page }) => {
+    const keys: (string | undefined)[] = [];
+    await page.route("**/write?*", (route) => {
+      keys.push(route.request().headers()["idempotency-key"]);
+      return keys.length === 1 ? route.abort() : route.fulfill({ status: 202, body: "write: message sent to sferik\n" });
+    });
+    expect(await result(page, "echo hi | write sferik")).toBe("write: message sent to sferik");
+    // The same key both times, and one the server takes: 16 to 64 letters, digits, hyphens, and underscores.
+    expect(keys).toEqual([keys[0], keys[0]]);
+    expect(keys[0]).toMatch(/^[\w-]{16,64}$/);
+    // Another message has a key of its own.
+    await page.unroute("**/write?*");
+    await page.route("**/write?*", (route) => {
+      keys.push(route.request().headers()["idempotency-key"]);
+      return route.fulfill({ status: 202, body: "write: message sent to sferik\n" });
+    });
+    await result(page, "echo hi | write sferik");
+    expect(keys[2]).not.toBe(keys[0]);
+  });
+
+  test("write says a message may not have been sent when no answer comes twice, and that none was, offline", async ({ page, context }) => {
+    let asked = 0;
+    await page.route("**/write?*", (route) => {
+      asked++;
+      return route.abort();
+    });
+    expect(await result(page, "echo hi | write sferik; echo $status")).toBe("write: sferik.net didn't answer, so the message may not have been sent\n1");
+    expect(asked).toBe(2);
+    // Ctrl-C, while it waits to send the message again, stops it there.
+    await start(page, "echo hi | write sferik");
+    await expect.poll(() => asked).toBe(3);
+    await field(page).press("Control+c");
+    await done(page);
+    expect(asked).toBe(3);
+    await context.setOffline(true);
+    expect(await result(page, "echo hi | write sferik; echo $status")).toBe("write: you're offline, so nothing was sent\n1");
+    expect(asked).toBe(3);
+  });
+
   test("write takes a message piped in, and says what went wrong", async ({ page }) => {
     await page.route("**/write?*", (route) => route.fulfill({ status: 429, body: "write: one message a minute, please\n" }));
     expect(await result(page, "echo hi | write sferik; echo $status")).toBe("write: one message a minute, please\n1");
     expect(await result(page, "write")).toBe("usage: write user [tty]");
     expect(await result(page, "write root")).toBe("write: root is not logged in");
     expect(await result(page, "echo | write sferik")).toBe("write: nothing to send");
-    await page.unroute("**/write?*");
-    await page.route("**/write?*", (route) => route.abort());
-    expect(await result(page, "echo hi | write sferik")).toBe("write: sferik.net can't be reached, so nothing was sent");
   });
 
   test("imgcat shows the comic, and says what isn't an image", async ({ page }) => {
