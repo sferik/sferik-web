@@ -331,6 +331,68 @@ describe("the Worker", () => {
     assert.equal(kept.size, 5);
   });
 
+  test("gzips what Cloudflare sends as it is, for what takes gzip, on its way out and not in the cache", async (t) => {
+    // The cache, which answers If-None-Match itself, with a 304 that has the headers of what it kept.
+    const kept = new Map<string, Response>();
+    const cache = {
+      async match(request: Request) {
+        const found = kept.get(request.url)?.clone();
+        const same = found && request.headers.get("if-none-match") === found.headers.get("etag");
+        return same ? new Response(null, { status: 304, headers: found.headers }) : found;
+      },
+      put: async (request: Request, response: Response) => void kept.set(request.url, response),
+    };
+    const global = globalThis as { caches?: unknown };
+    const before = global.caches;
+    global.caches = { default: cache };
+    t.after(() => void (global.caches = before));
+
+    // A request as Cloudflare hands it over: what the client said it takes is in cf, not in the headers.
+    const e = env();
+    const ask = (url: string, accept: string, takes?: string) =>
+      worker.fetch(
+        Object.assign(new Request(`https://sferik.net${url}`, { headers: { accept } }), takes === undefined ? {} : { cf: { clientAcceptEncoding: takes } }),
+        e,
+        CTX,
+      );
+    const encoding = async (url: string, accept: string, takes?: string) => (await ask(url, accept, takes)).headers.get("content-encoding");
+
+    // The API's description, the feed, WebFinger's answer, the contact card, and the resume as LaTeX and as a PDF.
+    const left: [string, string][] = [
+      ["/openapi.json", "*/*"],
+      ["/talks.atom", "*/*"],
+      ["/.well-known/webfinger?resource=acct:sferik@sferik.net", "*/*"],
+      ["/finger", "text/vcard"],
+      ["/resume", "application/x-latex"],
+      ["/resume", "application/pdf"],
+    ];
+    for (const [url, accept] of left) assert.equal(await encoding(url, accept, "gzip, br"), "gzip", url);
+    await Promise.all(waiting);
+    // What's kept isn't said to be gzip, or the runtime would compress it, and again when it's sent.
+    assert.ok(kept.size >= left.length);
+    for (const response of kept.values()) assert.equal(response.headers.get("content-encoding"), null);
+    // From what's kept, it's gzip all the same, with the body there was, and to be kept apart from one that isn't.
+    const again = await ask("/talks.atom", "*/*", "br, gzip");
+    assert.equal(again.headers.get("content-encoding"), "gzip");
+    assert.equal(again.headers.get("vary"), "Accept-Encoding");
+    assert.match(await again.text(), /^<\?xml/);
+    assert.equal((await ask("/resume", "application/pdf", "gzip")).headers.get("vary"), "Accept, Accept-Encoding");
+
+    // Not for what doesn't take gzip (curl, unless it's told to), or doesn't say what it takes.
+    for (const takes of ["", "identity", "br", undefined]) assert.equal(await encoding("/openapi.json", "*/*", takes), null);
+    assert.equal(await (await ask("/resume", "application/pdf", "")).text().then((pdf) => pdf.slice(0, 8)), "%PDF-1.4");
+    // Nor for what Cloudflare compresses itself, or what isn't a 200.
+    assert.equal(await encoding("/talks", "application/json", "gzip"), null);
+    assert.equal(await encoding("/.well-known/webfinger?resource=acct:nobody@example.com", "*/*", "gzip"), null);
+    const tag = (await ask("/openapi.json", "*/*", "")).headers.get("etag")!;
+    const unchanged = await worker.fetch(
+      Object.assign(new Request("https://sferik.net/openapi.json", { headers: { "if-none-match": tag } }), { cf: { clientAcceptEncoding: "gzip" } }),
+      e,
+      CTX,
+    );
+    assert.deepEqual([unchanged.status, unchanged.headers.get("content-encoding")], [304, null]);
+  });
+
   test("keeps what wasn't found in Cloudflare's cache for a minute, and says nothing of that to whoever asked", async (t) => {
     const kept = new Map<string, Response>();
     const cache = {

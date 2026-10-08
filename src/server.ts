@@ -1222,8 +1222,9 @@ export interface AppOptions {
   refresh?: boolean;
   // The deployed commit and when it was deployed (the deploy sets them).
   version?: { commit?: string; deployed?: string };
-  // Gzip text responses for clients that accept it. The Node server does;
-  // on Workers, Cloudflare does it in front of the app.
+  // Gzip text responses for clients that accept it, and the resume's PDF,
+  // whose pages are plain text inside. The Node server does; on Workers,
+  // Cloudflare does it in front of the app, or the Worker itself (compressed).
   compress?: boolean;
   // Who's logged in, and the ration of mail (a Durable Object on Workers).
   host?: Host;
@@ -1335,7 +1336,7 @@ export function createApp({
       const gzip =
         compress &&
         body.length > 1024 &&
-        /^(text\/|application\/[\w.+-]*(json|javascript|xml)|image\/svg)/.test(type) &&
+        /^(text\/|application\/[\w.+-]*(json|javascript|xml)|application\/(pdf|x-latex)|image\/svg)/.test(type) &&
         /\bgzip\b/.test(req.headers["accept-encoding"] ?? "");
       const tag = status === 200 ? etag(body).replace(/"$/, gzip ? '-gz"' : '"') : null;
       const fresh = tag !== null && (req.headers["if-none-match"] ?? "").split(",").some((t) => t.trim().replace(/^W\//, "") === tag);

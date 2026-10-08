@@ -552,6 +552,9 @@ describe("offline (snapshots from data/)", () => {
       const tag = page.headers.get("etag")!;
       assert.match(tag, /-gz"$/);
       assert.equal((await gz.get("/", { accept: "text/html", headers: { "accept-encoding": "gzip", "if-none-match": tag } })).status, 304);
+      // The resume as a PDF and as LaTeX, too: its pages are plain text inside.
+      for (const accept of ["application/pdf", "application/x-latex"])
+        assert.equal((await gz.get("/resume", { accept, headers: { "accept-encoding": "gzip" } })).headers.get("content-encoding"), "gzip");
       // Not for clients that don't take it, small bodies, or images.
       assert.equal((await gz.get("/site.css", { headers: { "accept-encoding": "identity" } })).headers.get("content-encoding"), null);
       assert.equal((await gz.get("/.plan", { headers: { "accept-encoding": "gzip" } })).headers.get("content-encoding"), null);

@@ -16,6 +16,8 @@
  *                 for the next reader, though browsers still check for a new
  *                 one on every load
  *   write         emailed, through Email Routing
+ *   compression   Cloudflare's, but for the types it leaves as they are (the
+ *                 API's description, the feed, the PDF), which are gzipped here
  *
  * Deploy with `bun run deploy`; see the README for the one-time setup.
  */
@@ -244,43 +246,69 @@ export interface Context {
   waitUntil(promise: Promise<unknown>): void;
 }
 
+// What Cloudflare sends as it is, though it's text, or as good as: it
+// compresses a list of types, and the API's description (58 kB of JSON, under
+// a type of its own), the feed, the contact card, WebFinger's answer, and the
+// resume as LaTeX and as a PDF (whose pages are plain text inside) aren't on
+// it. Said to be gzip, a response is compressed by the runtime as it's sent.
+// So that's said last, of a response on its way out, and what's kept is kept
+// as it was: one kept as gzip would be compressed again. And it's said only
+// to what takes gzip, which isn't what the request's Accept-Encoding says
+// here (Cloudflare has put its own there) but what it said when it arrived:
+// curl, which asks for no encoding unless it's told to, gets the PDF as it is.
+const UNCOMPRESSED = /^(?:application\/(?:openapi\+json|jrd\+json|atom\+xml|x-latex|pdf)|text\/vcard)\b/;
+function compressed(response: Response, request: Request): Response {
+  const plain = response.status !== 200 || !UNCOMPRESSED.test(response.headers.get("content-type")!);
+  const takes = (request as { cf?: { clientAcceptEncoding?: string } }).cf?.clientAcceptEncoding ?? "";
+  if (plain || !/\bgzip\b/.test(takes)) return response;
+  const out = new Response(response.body, response);
+  out.headers.set("content-encoding", "gzip");
+  out.headers.append("vary", "Accept-Encoding");
+  return out;
+}
+
+// Answer a request from the cache, or else with the app.
+async function respond(request: Request, env: Env, ctx: Context): Promise<Response> {
+  // One entry for each thing asked for: the same URL is JSON to one Accept
+  // header and text to another, but the same to every one that wants the
+  // same formats as much (asksFor), as each browser's does for a page. Asked
+  // with If-None-Match, the cache answers 304 Not Modified itself.
+  const cache = request.method === "GET" || request.method === "HEAD" ? edge() : undefined;
+  const url = new URL(request.url);
+  const key = `${url.origin}${url.pathname}?${new URLSearchParams({ search: TOP.test(url.pathname) ? "" : url.search, accept: asksFor(request.headers.get("accept") ?? undefined), commit: env.COMMIT ?? "" })}`;
+  const tag = request.headers.get("if-none-match");
+  const kept = await cache?.match(new Request(key, { headers: tag ? { "if-none-match": tag } : {} }));
+  // Answer a request with the app, and keep what a GET is told, if it's to be kept.
+  const answer = async (asked: Request) => {
+    const app = createApp({
+      files: files(env),
+      store: kvStore(env.LIVE),
+      token: env.GITHUB_TOKEN,
+      version: { commit: env.COMMIT, deployed: env.DEPLOYED },
+      host: env.MBP.get(env.MBP.idFromName("mbp")),
+      limit: allows(env.CHECK_INS),
+      mail: mailer(env),
+    });
+    const response = await serve(app, asked);
+    if (cache && asked.method === "GET" && keepable(response)) ctx.waitUntil(cache.put(new Request(key), toKeep(response.clone(), Date.now())));
+    return response;
+  };
+  if (!kept) return answer(request);
+  const now = Date.now();
+  const marker = new Request(`${key}&building=1`);
+  if (old(kept, now) && !begun(await cache!.match(marker), now)) {
+    // The page again, whole, whatever this request was: a HEAD, or one with If-None-Match.
+    const headers = new Headers(request.headers);
+    headers.delete("if-none-match");
+    ctx.waitUntil(cache!.put(marker, building(now)));
+    ctx.waitUntil(answer(new Request(request.url, { headers })));
+  }
+  return toSend(kept, request.method === "HEAD");
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: Context): Promise<Response> {
-    // One entry for each thing asked for: the same URL is JSON to one Accept
-    // header and text to another, but the same to every one that wants the
-    // same formats as much (asksFor), as each browser's does for a page. Asked
-    // with If-None-Match, the cache answers 304 Not Modified itself.
-    const cache = request.method === "GET" || request.method === "HEAD" ? edge() : undefined;
-    const url = new URL(request.url);
-    const key = `${url.origin}${url.pathname}?${new URLSearchParams({ search: TOP.test(url.pathname) ? "" : url.search, accept: asksFor(request.headers.get("accept") ?? undefined), commit: env.COMMIT ?? "" })}`;
-    const tag = request.headers.get("if-none-match");
-    const kept = await cache?.match(new Request(key, { headers: tag ? { "if-none-match": tag } : {} }));
-    // Answer a request with the app, and keep what a GET is told, if it's to be kept.
-    const answer = async (asked: Request) => {
-      const app = createApp({
-        files: files(env),
-        store: kvStore(env.LIVE),
-        token: env.GITHUB_TOKEN,
-        version: { commit: env.COMMIT, deployed: env.DEPLOYED },
-        host: env.MBP.get(env.MBP.idFromName("mbp")),
-        limit: allows(env.CHECK_INS),
-        mail: mailer(env),
-      });
-      const response = await serve(app, asked);
-      if (cache && asked.method === "GET" && keepable(response)) ctx.waitUntil(cache.put(new Request(key), toKeep(response.clone(), Date.now())));
-      return response;
-    };
-    if (!kept) return answer(request);
-    const now = Date.now();
-    const marker = new Request(`${key}&building=1`);
-    if (old(kept, now) && !begun(await cache!.match(marker), now)) {
-      // The page again, whole, whatever this request was: a HEAD, or one with If-None-Match.
-      const headers = new Headers(request.headers);
-      headers.delete("if-none-match");
-      ctx.waitUntil(cache!.put(marker, building(now)));
-      ctx.waitUntil(answer(new Request(request.url, { headers })));
-    }
-    return toSend(kept, request.method === "HEAD");
+    return compressed(await respond(request, env, ctx), request);
   },
 
   // The cron trigger (wrangler.jsonc): fetch every live value and save them.
