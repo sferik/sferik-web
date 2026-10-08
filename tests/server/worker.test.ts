@@ -463,6 +463,27 @@ describe("the Worker", () => {
     const next = await (await get(e, "/", "text/html")).text();
     assert.notEqual(next, page);
     assert.match(next, /"multiDownloads":7\b/);
+    // Readers who come while one is being built get the one kept, and no page is built for each of them.
+    clock += 60_000;
+    built = 0;
+    const entry = [...kept.keys()].find((url) => !url.includes("building"))!;
+    const unbuilt = kept.get(entry)!.clone();
+    assert.equal(await (await get(e, "/", "text/html")).text(), next);
+    await Promise.all(waiting);
+    await Promise.all(waiting);
+    const once = built;
+    assert.notEqual(once, 0);
+    kept.set(entry, unbuilt.clone()); // as if the new one weren't done yet
+    clock += 29_999;
+    assert.equal(await (await get(e, "/", "text/html")).text(), next);
+    await Promise.all(waiting);
+    assert.equal(built, once);
+    // One that's been half a minute at it never finished: the next reader has another built.
+    clock += 1;
+    await get(e, "/", "text/html");
+    await Promise.all(waiting);
+    await Promise.all(waiting);
+    assert.equal(built, 2 * once);
     // Whatever asks for an old page has a whole new one built: a HEAD, or a request that has the old one.
     for (const [method, headers] of [
       ["HEAD", {}],

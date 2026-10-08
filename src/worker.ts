@@ -182,6 +182,8 @@ const LIVE_PATHS = ["/contributions", "/src"];
 // wait for a page to be built. One that's older than a minute is sent as it
 // is, at once, and a new one is built for the next reader after that's gone.
 // So a page's numbers are from the last time it was asked for, within the hour.
+// While one is being built, that's kept too, for half a minute, so the readers
+// who come before it's done don't each have one built as well.
 //
 // What wasn't found is kept for a minute too, since most of what asks for
 // what isn't here is a script trying every door (/wp-login.php), and so is
@@ -200,6 +202,7 @@ interface EdgeCache {
 }
 const PAGES_FOR = 60; // seconds a page is good for
 const PAGES_KEPT = 3600; // seconds it's kept, to be sent while the next is built
+const BUILDING_FOR = 30; // seconds that a page being built is left to it, before another is
 const MISSING_FOR = 60; // seconds
 const OWN = "x-own-cache-control";
 const NONE = "none"; // for a response with no Cache-Control of its own
@@ -228,6 +231,9 @@ function toSend(kept: Response, head: boolean): Response {
 }
 // Whether what's kept is a page that's no longer good, to be built again.
 const old = (kept: Response, now: number) => now - Number(kept.headers.get(KEPT_AT) ?? Infinity) >= PAGES_FOR * 1000;
+// What's kept to say a page is being built, and whether that still holds.
+const building = (now: number) => new Response("building", { headers: { "cache-control": `public, max-age=${BUILDING_FOR}`, [KEPT_AT]: String(now) } });
+const begun = (marker: Response | undefined, now: number) => marker !== undefined && now - Number(marker.headers.get(KEPT_AT)) < BUILDING_FOR * 1000;
 // A query that changes nothing isn't another entry: /whoami?x=1 is /whoami,
 // and without this each one made up would be built anew. Only WebFinger reads
 // its query (the account asked about), and it's not at the top, like the
@@ -265,10 +271,13 @@ export default {
       return response;
     };
     if (!kept) return answer(request);
-    if (old(kept, Date.now())) {
+    const now = Date.now();
+    const marker = new Request(`${key}&building=1`);
+    if (old(kept, now) && !begun(await cache!.match(marker), now)) {
       // The page again, whole, whatever this request was: a HEAD, or one with If-None-Match.
       const headers = new Headers(request.headers);
       headers.delete("if-none-match");
+      ctx.waitUntil(cache!.put(marker, building(now)));
       ctx.waitUntil(answer(new Request(request.url, { headers })));
     }
     return toSend(kept, request.method === "HEAD");
