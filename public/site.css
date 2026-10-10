@@ -614,6 +614,7 @@ main[aria-busy] > .lpr {
    type size; the squares scale with the column so the year fills 80ch. */
 .out.graph {
   max-width: none; /* the graph spans the full 80 columns, like the banner */
+  position: relative; /* for the tooltip */
 }
 .cal {
   --label: 4ch;
@@ -658,6 +659,29 @@ main[aria-busy] > .lpr {
 }
 .graph .c4 {
   color: var(--g4);
+}
+/* The tooltip over the square the pointer is on, like GitHub's: the status
+   line's colors, with a caret pointing down at the square. */
+.cal-tip {
+  position: absolute;
+  z-index: 5;
+  margin-bottom: 5px; /* the caret */
+  padding: 0 1ch;
+  font-size: 0.85em;
+  border-radius: 6px;
+  background: var(--bar-bg);
+  color: var(--bar-ink);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.cal-tip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: var(--caret);
+  translate: -50% 0;
+  border: 5px solid transparent;
+  border-top-color: var(--bar-bg);
 }
 .graph-meta {
   margin-top: 0.5lh;

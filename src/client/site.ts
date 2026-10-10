@@ -168,6 +168,9 @@ function ago(date: Date) {
 
 // Contribution graph: month labels, day names, and one ■ per day.
 const GLYPHS = ["■", "■", "■", "■", "■"];
+// "October 7th": the endings of English ordinals, by plural category.
+const ordinal = new Intl.PluralRules("en-US", { type: "ordinal" });
+const TH: Record<string, string> = { one: "st", two: "nd", few: "rd", other: "th" };
 function graph(days: Day[]) {
   const first = new Date(days[0].date + "T00:00:00");
   const cells: (Day | null)[] = [...Array<null>(first.getDay()).fill(null), ...days];
@@ -194,11 +197,49 @@ function graph(days: Day[]) {
   };
   for (const { w, m } of months) place(span(MON[m], "cal-month"), 1, w + 2);
   ["Mon", "Wed", "Fri"].forEach((name, i) => place(span(name, "cal-day"), 3 + i * 2, 1));
+  const held = new WeakMap<Element, Day>();
   cells.forEach((c, i) => {
     if (!c) return;
     const s = span(GLYPHS[c.level], `cal-cell c${c.level}`);
-    s.title = `${c.count} contribution${c.count === 1 ? "" : "s"} on ${c.date}`;
+    held.set(s, c);
     place(s, (i % 7) + 2, Math.floor(i / 7) + 2);
+  });
+  // Pointing at a square says what it holds, in GitHub's words, in a tooltip
+  // above it with a caret at the square. It stays inside the graph, so at
+  // either edge the tooltip stops and only the caret follows. It joins the
+  // page on first use, after the graph, so it isn't one of the graph's rows.
+  const tip = el("div", { class: "cal-tip", "aria-hidden": "true" });
+  const show = (e: Event) => {
+    const cell = (e.target as Element).closest<HTMLElement>(".cal-cell:not(.unrevealed)");
+    tip.hidden = !cell;
+    if (!cell) return;
+    // Worded when it's asked for: naming every day of the year as the page
+    // is built takes long enough to hold up a phone.
+    const { date, count } = held.get(cell)!;
+    const d = new Date(date + "T00:00:00");
+    const day = `${d.toLocaleString("en-US", { month: "long" })} ${d.getDate()}${TH[ordinal.select(d.getDate())]}`;
+    tip.textContent = `${count || "No"} contribution${count === 1 ? "" : "s"} on ${day}.`;
+    grid.after(tip);
+    const box = grid.parentElement!.getBoundingClientRect();
+    const at = cell.getBoundingClientRect();
+    const x = at.left + at.width / 2 - box.left;
+    const left = Math.max(0, Math.min(x - tip.offsetWidth / 2, box.width - tip.offsetWidth));
+    tip.style.left = `${left}px`;
+    tip.style.bottom = `${box.bottom - at.top}px`;
+    tip.style.setProperty("--caret", `${x - left}px`);
+  };
+  // A mouse points by hovering, and takes the tooltip with it when it leaves.
+  // A finger points by tapping (touching may be the start of a scroll), and
+  // its tooltip stays until the next tap, on another square or anywhere else.
+  grid.addEventListener("pointerover", (e) => {
+    if (e.pointerType !== "touch") show(e);
+  });
+  grid.addEventListener("click", show);
+  grid.addEventListener("pointerleave", (e) => {
+    if (e.pointerType !== "touch") tip.hidden = true;
+  });
+  document.addEventListener("pointerdown", (e) => {
+    if (!grid.contains(e.target as Node)) tip.hidden = true;
   });
   return grid;
 }

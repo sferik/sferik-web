@@ -82,6 +82,70 @@ test.describe("live data", () => {
     await expect(page.locator("[data-graph-meta]")).toContainText("(cached)");
     expect(await page.locator("[data-graph] .cal-cell").count()).toBe(SNAPSHOT.contributions.length);
   });
+
+  test("pointing at a square of the graph says what it holds, as GitHub does", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/");
+    const graph = page.locator("[data-graph]");
+    const tip = graph.locator(".cal-tip");
+    // The snapshot is refreshed daily, so say what each square should, from its day.
+    const says = ({ date, count }: { date: string; count: number }) => {
+      const d = new Date(date + "T00:00:00");
+      const th = ["th", "st", "nd", "rd"][d.getDate() % 10 > 3 || (d.getDate() > 10 && d.getDate() < 14) ? 0 : d.getDate() % 10];
+      return `${count || "No"} contribution${count === 1 ? "" : "s"} on ${d.toLocaleString("en-US", { month: "long" })} ${d.getDate()}${th}.`;
+    };
+    const cell = graph.locator(".cal-cell").nth(200);
+    await cell.hover();
+    await expect(tip).toHaveText(says(SNAPSHOT.contributions[200]));
+    // Above the square, its caret centered on it.
+    const [at, box] = [(await cell.boundingBox())!, (await tip.boundingBox())!];
+    expect(box.y + box.height).toBeLessThanOrEqual(at.y);
+    const caret = await tip.evaluate((e) => e.getBoundingClientRect().left + parseFloat(e.style.getPropertyValue("--caret")));
+    expect(caret).toBeCloseTo(at.x + at.width / 2, 0);
+    // A square in the first column: the tooltip stops at the graph's edge.
+    await graph.locator(".cal-cell").first().hover();
+    await expect(tip).toHaveText(says(SNAPSHOT.contributions[0]));
+    expect((await tip.boundingBox())!.x).toBeGreaterThanOrEqual((await graph.boundingBox())!.x);
+    // It goes when the pointer is on a label, or off the graph.
+    await graph.locator(".cal-day").first().hover();
+    await expect(tip).toBeHidden();
+    await cell.hover();
+    await expect(tip).toBeVisible();
+    await page.locator("[data-graph-meta]").hover();
+    await expect(tip).toBeHidden();
+  });
+});
+
+test.describe("on a touch screen", () => {
+  test.use({ hasTouch: true, viewport: { width: 390, height: 844 } });
+
+  test("tapping a square of the graph says what it holds, until the next tap", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/");
+    const graph = page.locator("[data-graph]");
+    const tip = graph.locator(".cal-tip");
+    const cells = graph.locator(".cal-cell");
+    await cells.nth(200).tap();
+    await expect(tip).toHaveText(new RegExp(`^${SNAPSHOT.contributions[200].count || "No"} contributions? on \\w+ \\d+(st|nd|rd|th)\\.$`));
+    // The finger has lifted, and it's still there, inside the screen.
+    await expect(tip).toBeVisible();
+    const box = (await tip.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(390);
+    // The last square: the tooltip moves to it, and stops at the graph's edge.
+    const said = await tip.textContent();
+    await cells.last().tap();
+    await expect(tip).not.toHaveText(said!);
+    const [edge, within] = [(await tip.boundingBox())!, (await graph.boundingBox())!];
+    expect(edge.x + edge.width).toBeLessThanOrEqual(within.x + within.width + 0.5);
+    // It goes with a tap on a label, or anywhere off the graph.
+    await graph.locator(".cal-day").first().tap();
+    await expect(tip).toBeHidden();
+    await cells.nth(200).tap();
+    await expect(tip).toBeVisible();
+    await page.locator("[data-graph-meta]").tap();
+    await expect(tip).toBeHidden();
+  });
 });
 
 // ---------------------------------------------------------------- themes

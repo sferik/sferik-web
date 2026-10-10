@@ -161,10 +161,17 @@ test.describe("rendering from the API", () => {
       return { date: d.toISOString().slice(0, 10), count, level: count ? 2 : 0 };
     });
     await serveModule(page, "/contributions", { contributions: days });
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/");
     const cal = page.locator("[data-graph] .cal");
     await expect(cal).toContainText("Oct");
-    await expect(cal.locator('[title="1 contribution on 2025-10-04"]')).toHaveCount(1);
+    // Each square says its count and its day: a single contribution, none (i % 9 === 0), and each ordinal.
+    const said = { 0: "No contributions on October 1st.", 1: "4 contributions on October 2nd.", 2: "4 contributions on October 3rd." };
+    Object.assign(said, { 3: "1 contribution on October 4th.", 10: "4 contributions on October 11th.", 21: "4 contributions on October 22nd." });
+    for (const [i, text] of Object.entries(said)) {
+      await cal.locator(".cal-cell").nth(Number(i)).hover();
+      await expect(page.locator("[data-graph] .cal-tip")).toHaveText(text);
+    }
     // The first square sits in the Wednesday row; Sunday through Tuesday are empty.
     await expect(cal.locator(".cal-cell").first()).toHaveCSS("grid-row-start", "5");
   });
