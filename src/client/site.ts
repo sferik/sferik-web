@@ -195,7 +195,15 @@ function graph(days: Day[]) {
     node.style.gridColumn = String(col);
     grid.append(node);
   };
-  for (const { w, m } of months) place(span(MON[m], "cal-month"), 1, w + 2);
+  // Three weeks of squares can be narrower than a month's name on a phone,
+  // so the last label is told how many weeks it has before the edge, and the
+  // stylesheet moves it left by however much it would stick out.
+  months.forEach(({ w, m }, i) => {
+    const end = i === months.length - 1;
+    const label = span(MON[m], end ? "cal-month cal-end" : "cal-month");
+    if (end) label.style.setProperty("--room", String(weeks - w));
+    place(label, 1, w + 2);
+  });
   ["Mon", "Wed", "Fri"].forEach((name, i) => place(span(name, "cal-day"), 3 + i * 2, 1));
   const held = new WeakMap<Element, Day>();
   cells.forEach((c, i) => {

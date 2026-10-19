@@ -629,6 +629,11 @@ main[aria-busy] > .lpr {
   white-space: nowrap;
   min-width: 0; /* month names overflow into the next columns instead of widening them */
 }
+/* The last month name ends at the graph's edge at the latest: it moves left
+   by its 3ch less the --room weeks of squares it has, when that's more. */
+.cal-end {
+  margin-inline-start: min(0px, (100cqw - var(--label)) / var(--weeks) * var(--room) - 3ch);
+}
 .cal-cell {
   /* One ■ per week column. The glyph fills about 0.6em, so dividing the
      column by 0.8 leaves a small gap between squares, like GitHub's grid. */
