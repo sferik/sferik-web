@@ -356,13 +356,15 @@ test.describe("every shell command", () => {
 });
 
 // ------------------------------------------------------------ navigation
-// A page's coverage is lost when the browser leaves it, so these tests answer
-// the navigation with 204 No Content, which makes the browser stay put.
+// A page's coverage is lost when the browser leaves it, so these tests abort
+// the navigation as cancelled, which makes the browser stay put. (Any other
+// error shows Chrome's error page, and since Playwright 1.64 answering with
+// 204 No Content hangs the page.)
 
 async function expectNavigation(page: Page, path: string, action: () => Promise<unknown>) {
   await page.route(
     (url) => url.pathname === path,
-    (route) => (route.request().isNavigationRequest() ? route.fulfill({ status: 204 }) : route.fallback()),
+    (route) => (route.request().isNavigationRequest() ? route.abort("aborted") : route.fallback()),
   );
   const request = page.waitForRequest((r) => r.isNavigationRequest() && new URL(r.url()).pathname === path);
   await action();

@@ -1293,14 +1293,14 @@ test.describe("macOS", () => {
   });
 
   test("reboot reloads the page", async ({ page }) => {
-    // Answer the reload with 204 No Content, which leaves the page as it is
-    // (and its coverage with it).
+    // Cancel the reload, which leaves the page as it is (and its coverage
+    // with it).
     const reloads: string[] = [];
     await page.route(
       (url) => url.pathname === "/",
       (route) => {
         reloads.push(route.request().url());
-        return route.fulfill({ status: 204 });
+        return route.abort("aborted");
       },
     );
     await sh(page, "reboot");
@@ -1625,7 +1625,7 @@ test.describe("everything else", () => {
   });
 
   test("open goes to files and directories", async ({ page }) => {
-    await page.route("**/robots.txt", (route) => (route.request().isNavigationRequest() ? route.fulfill({ status: 204 }) : route.fallback()));
+    await page.route("**/robots.txt", (route) => (route.request().isNavigationRequest() ? route.abort("aborted") : route.fallback()));
     const nav = page.waitForRequest((r) => r.isNavigationRequest() && r.url().endsWith("/robots.txt"));
     await sh(page, "open robots.txt");
     await nav;
