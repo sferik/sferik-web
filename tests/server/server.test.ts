@@ -254,7 +254,12 @@ describe("offline (snapshots from data/)", () => {
     const srcText = (await app.get("/src")).body;
     assert.match(srcText, /^multi_json +One interface to every Ruby JSON library\. +\d\.\dB↓ +\d+★$/m);
     assert.match(srcText, /^openai .* [\d.]+M↓/m);
-    assert.match(srcText, /^tesla +Ruby client for my car\. +[\d.]+k?↓ +\d+★\nsferik +Ruby client for this website\. +[\d.]+k?↓ +\d+★\nrubygems\.org /m);
+    assert.match(srcText, /^tesla +Ruby client for my car\. +[\d.]+k?↓ +\d+★\nsferik +Ruby client for this website\. +[\d.]+k?↓ +\d+★$/m);
+    // Robin and Duel follow SimpleCov, whatever their downloads.
+    assert.match(
+      srcText,
+      /^simplecov .+\nrobin +Fast, reliable background jobs for Ruby\. +[\d.]+k?↓ +\d+★\nduel +Fails CI when a change makes Ruby slower\. +[\d.]+k?↓ +\d+★\nfaraday_middleware /m,
+    );
     assert.match(srcText, /^octokit +GitHub API Ruby client\. /m);
     assert.match(srcText, /^rubygems\.org +The Ruby package registry\. +[\d.]+k★$/m);
     assert.match(srcText, /^total +\d\.\dB↓ +\d+\.\dk★$/m);

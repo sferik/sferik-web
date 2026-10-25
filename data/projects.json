@@ -33,6 +33,26 @@
       "stars": 4928
     },
     {
+      "name": "robin",
+      "url": "https://rubygems.org/gems/robin",
+      "description": "Fast, reliable background jobs for Ruby.",
+      "gem": "robin",
+      "repo": "sferik/robin",
+      "downloads": 5111,
+      "stars": 0,
+      "with": "simplecov"
+    },
+    {
+      "name": "duel",
+      "url": "https://rubygems.org/gems/duel",
+      "description": "Fails CI when a change makes Ruby slower.",
+      "gem": "duel",
+      "repo": "sferik/duel-ruby",
+      "downloads": 593,
+      "stars": 0,
+      "with": "robin"
+    },
+    {
       "name": "faraday_middleware",
       "url": "https://rubygems.org/gems/faraday_middleware",
       "description": "Middleware for the Faraday HTTP client.",
