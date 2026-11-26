@@ -1,7 +1,7 @@
 {
   "command": "ls -lS ~/src",
-  "snapshot": "2026-11-25",
-  "totalDownloads": 5606698386,
+  "snapshot": "2026-11-26",
+  "totalDownloads": 5609888479,
   "gemCount": 81,
   "more": "https://github.com/sferik?tab=repositories",
   "projects": [
@@ -11,7 +11,7 @@
       "description": "One interface to every Ruby JSON library.",
       "gem": "multi_json",
       "repo": "sferik/multi_json",
-      "downloads": 1200978847,
+      "downloads": 1201592053,
       "stars": 28
     },
     {
@@ -20,7 +20,7 @@
       "description": "One interface to every Ruby XML library.",
       "gem": "multi_xml",
       "repo": "sferik/multi_xml",
-      "downloads": 624780695,
+      "downloads": 625204662,
       "stars": 171
     },
     {
@@ -29,7 +29,7 @@
       "description": "Code coverage for Ruby.",
       "gem": "simplecov",
       "repo": "simplecov-ruby/simplecov",
-      "downloads": 523924170,
+      "downloads": 524337249,
       "stars": 4926
     },
     {
@@ -38,7 +38,7 @@
       "description": "Fast, reliable background jobs for Ruby.",
       "gem": "robin",
       "repo": "sferik/robin",
-      "downloads": 5925,
+      "downloads": 5950,
       "stars": 3,
       "with": "simplecov"
     },
@@ -48,7 +48,7 @@
       "description": "Fails CI when a change makes Ruby slower.",
       "gem": "duel",
       "repo": "sferik/duel-ruby",
-      "downloads": 8417,
+      "downloads": 8553,
       "stars": 21,
       "with": "robin"
     },
@@ -58,7 +58,7 @@
       "description": "Middleware for the Faraday HTTP client.",
       "gem": "faraday_middleware",
       "repo": "lostisland/faraday_middleware",
-      "downloads": 472883103,
+      "downloads": 473034654,
       "stars": 557
     },
     {
@@ -67,8 +67,8 @@
       "description": "GitHub API Ruby client.",
       "gem": "octokit",
       "repo": "octokit/octokit.rb",
-      "downloads": 405886344,
-      "stars": 3949
+      "downloads": 406106745,
+      "stars": 3950
     },
     {
       "name": "oauth2",
@@ -76,7 +76,7 @@
       "description": "Ruby client for OAuth 2.0.",
       "gem": "oauth2",
       "repo": "ruby-oauth/oauth2",
-      "downloads": 288140731,
+      "downloads": 288347955,
       "stars": 2179
     },
     {
@@ -85,7 +85,7 @@
       "description": "Multi-provider authentication for Rack.",
       "gem": "omniauth",
       "repo": "omniauth/omniauth",
-      "downloads": 234895852,
+      "downloads": 235104755,
       "stars": 8102,
       "with": "simple_oauth"
     },
@@ -95,8 +95,8 @@
       "description": "A fast, chainable HTTP client for Ruby.",
       "gem": "http",
       "repo": "httprb/http",
-      "downloads": 221788291,
-      "stars": 3083
+      "downloads": 221928798,
+      "stars": 3084
     },
     {
       "name": "equalizer",
@@ -104,7 +104,7 @@
       "description": "Define equality and hashing from a few keys.",
       "gem": "equalizer",
       "repo": "dkubb/equalizer",
-      "downloads": 133005839,
+      "downloads": 133029596,
       "stars": 204
     },
     {
@@ -113,7 +113,7 @@
       "description": "Turns Ruby syntax trees back into source.",
       "gem": "unparser",
       "repo": "mbj/unparser",
-      "downloads": 105446314,
+      "downloads": 105498127,
       "stars": 329
     },
     {
@@ -122,7 +122,7 @@
       "description": "Database-backed background jobs.",
       "gem": "delayed_job",
       "repo": "collectiveidea/delayed_job",
-      "downloads": 68784884,
+      "downloads": 68818456,
       "stars": 4822
     },
     {
@@ -131,7 +131,7 @@
       "description": "Memoize method return values.",
       "gem": "memoizable",
       "repo": "dkubb/memoizable",
-      "downloads": 60910925,
+      "downloads": 60924741,
       "stars": 113
     },
     {
@@ -140,7 +140,7 @@
       "description": "RubyGems.org API Ruby client.",
       "gem": "gems",
       "repo": "rubygems/gems",
-      "downloads": 57211765,
+      "downloads": 57249249,
       "stars": 142
     },
     {
@@ -149,7 +149,7 @@
       "description": "Builds and verifies OAuth headers.",
       "gem": "simple_oauth",
       "repo": "laserlemon/simple_oauth",
-      "downloads": 43471733,
+      "downloads": 43482775,
       "stars": 78,
       "with": "oauth2"
     },
@@ -159,7 +159,7 @@
       "description": "A toolkit for building null objects.",
       "gem": "naught",
       "repo": "avdi/naught",
-      "downloads": 32322572,
+      "downloads": 32334003,
       "stars": 1059
     },
     {
@@ -168,7 +168,7 @@
       "description": "Twitter API Ruby client.",
       "gem": "twitter",
       "repo": "sferik/twitter-ruby",
-      "downloads": 28506050,
+      "downloads": 28513119,
       "stars": 4569
     },
     {
@@ -177,7 +177,7 @@
       "description": "Splits a stream of bytes into tokens.",
       "gem": "buftok",
       "repo": "sferik/buftok",
-      "downloads": 28370953,
+      "downloads": 28378774,
       "stars": 11
     },
     {
@@ -186,7 +186,7 @@
       "description": "Admin interface for any Rails app.",
       "gem": "rails_admin",
       "repo": "railsadminteam/rails_admin",
-      "downloads": 13572615,
+      "downloads": 13580433,
       "stars": 7955
     },
     {
@@ -195,7 +195,7 @@
       "description": "OpenAI API Ruby client.",
       "gem": "openai",
       "repo": "openai/openai-ruby",
-      "downloads": 3013243,
+      "downloads": 3030881,
       "stars": 478
     },
     {
@@ -204,7 +204,7 @@
       "description": "X API Ruby client.",
       "gem": "x",
       "repo": "sferik/x-ruby",
-      "downloads": 539598,
+      "downloads": 541279,
       "stars": 109,
       "with": "twitter"
     },
@@ -214,7 +214,7 @@
       "description": "MLB Stats API Ruby client.",
       "gem": "mlb",
       "repo": "sferik/mlb-ruby",
-      "downloads": 142803,
+      "downloads": 142868,
       "stars": 68
     },
     {
@@ -223,7 +223,7 @@
       "description": "Strict boolean assertions for Minitest.",
       "gem": "minitest-strict",
       "repo": "sferik/minitest-strict",
-      "downloads": 21844,
+      "downloads": 21918,
       "stars": 8
     },
     {
@@ -232,7 +232,7 @@
       "description": "NBA Stats API Ruby client.",
       "gem": "nba",
       "repo": "sferik/nba-ruby",
-      "downloads": 13134,
+      "downloads": 13143,
       "stars": 3,
       "with": "mlb"
     },
@@ -242,7 +242,7 @@
       "description": "Ruby client for my car.",
       "gem": "tesla",
       "repo": "sferik/tesla-ruby",
-      "downloads": 6316,
+      "downloads": 6319,
       "stars": 1
     },
     {
@@ -251,7 +251,7 @@
       "description": "Ruby client for this website.",
       "gem": "sferik",
       "repo": "sferik/sferik-ruby",
-      "downloads": 285,
+      "downloads": 288,
       "stars": 1,
       "with": "tesla"
     },
@@ -261,7 +261,7 @@
       "description": "Assert how many objects a block allocates.",
       "gem": "minitest-memory",
       "repo": "sferik/minitest-memory",
-      "downloads": 7025,
+      "downloads": 7064,
       "stars": 15,
       "with": "minitest-strict"
     },
@@ -271,7 +271,7 @@
       "description": "Command-line power tool for X, in Rust.",
       "gem": "t",
       "repo": "sferik/x-cli",
-      "downloads": 320636,
+      "downloads": 320718,
       "stars": 5602,
       "with": "x"
     },
